@@ -1,0 +1,19 @@
+[project]
+name = "english-teacher"
+version = "0.1.0"
+description = "Tutor de inglés local por voz: Whisper → Ollama → Kokoro"
+readme = "README.md"
+authors = [
+    { name = "jairo", email = "jali1993@hotmail.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ollama>=0.6.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+english-teacher = "english_teacher.main:main"
