@@ -21,6 +21,7 @@ class Feedback:
     why: str = ""
     result: str = ""  # only in practices that grade the answer (CORRECT / RETRY)
     verb_words: str = ""  # phrasal verbs practice: the words the student used for the target
+    meaning_ok: bool = False  # phrasal verbs practice: the target was used with the right meaning
     reply: str = ""
     raw: str = ""
 
@@ -29,7 +30,7 @@ class Feedback:
         return bool(self.correction and self.reply)
 
 
-def load_prompt(name: str = "conversation") -> str:
+def load_prompt(name: str) -> str:
     return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
@@ -76,19 +77,19 @@ def _reply_part(text: str) -> str | None:
 class Tutor:
     def __init__(
         self,
+        system_prompt: str,
         model: str = DEFAULT_MODEL,
         host: str | None = None,
         keep_history: bool = True,
         max_turns: int = 10,
         keep_alive: str = "30m",
-        system_prompt: str | None = None,
     ):
         self.model = model
         self.client = ollama.Client(host=host)
         self.keep_history = keep_history
         self.max_turns = max_turns
         self.keep_alive = keep_alive  # keep the model in VRAM while the student thinks
-        self.system = {"role": "system", "content": system_prompt or load_prompt()}
+        self.system = {"role": "system", "content": system_prompt}
         self.history: list[dict] = []
         self._think: bool | None = False
 

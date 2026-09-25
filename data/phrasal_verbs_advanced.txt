@@ -1,0 +1,78 @@
+# Less common / idiomatic phrasal verbs (B2-C1). One per line; lines starting with # are ignored.
+bail out
+bank on
+blurt out
+boil down to
+bottle up
+bounce back
+branch out
+brush up on
+butt in
+chip in
+churn out
+clamp down on
+come across as
+come down with
+come round
+come up against
+cut back on
+dawn on
+do away with
+drag on
+dwell on
+egg on
+face up to
+fall back on
+fall for
+fall out with
+fall through
+fend off
+fizzle out
+flesh out
+fob off
+gear up for
+get across
+get round to
+get to
+go along with
+go through with
+gloss over
+hold back
+hold out for
+iron out
+jot down
+lash out
+lay off
+live up to
+mull over
+nod off
+opt out
+own up to
+pan out
+patch up
+pull off
+pull through
+rip off
+rule out
+scrape by
+see through
+single out
+size up
+sleep on
+snap up
+spell out
+splash out on
+stand up for
+step down
+stick out
+talk down to
+tell off
+tie in with
+tip off
+touch on
+water down
+weigh up
+wind down
+wind up
+wriggle out of
+write off

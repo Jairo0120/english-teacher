@@ -15,6 +15,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 
+from english_teacher.levels import LEVELS, Level, render
 from english_teacher.llm import Feedback, Tutor, load_prompt
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,8 +28,11 @@ class Practice:
     prompt = ""
     greeting = ""  # fixed first line, when the tutor doesn't generate the opening
 
+    def __init__(self, level: Level = LEVELS["B2"]):
+        self.level = level
+
     def system_prompt(self) -> str:
-        return load_prompt(self.prompt)
+        return render(load_prompt(self.prompt), self.level)
 
     def opening(self) -> str | None:
         """Hidden instruction that makes the tutor open the session, or None to use `greeting`."""
@@ -78,11 +82,14 @@ class PhrasalVerbs(Practice):
 
     def __init__(
         self,
-        verbs_path: Path = ROOT / "data" / "phrasal_verbs.txt",
+        level: Level = LEVELS["B2"],
+        verbs_paths: list[Path] | None = None,
         progress_path: Path = ROOT / "progress" / "phrasal_verbs.json",
     ):
-        lines = verbs_path.read_text(encoding="utf-8").splitlines()
-        self.verbs = [v.strip() for v in lines if v.strip() and not v.startswith("#")]
+        super().__init__(level)
+        paths = verbs_paths or [ROOT / "data" / name for name in level.phrasal_lists]
+        lines = [line for path in paths for line in path.read_text(encoding="utf-8").splitlines()]
+        self.verbs = list(dict.fromkeys(v.strip() for v in lines if v.strip() and not v.startswith("#")))
         self.progress_path = progress_path
         self.progress: dict[str, dict] = (
             json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
@@ -104,12 +111,15 @@ class PhrasalVerbs(Practice):
         )
         words = str(d.get("verb_words", "")).strip()
         correct = bool(words) and bool(d.get("meaning_ok"))
+        if self.level.strict_grading:
+            correct = correct and bool(d.get("natural_use"))
         return Feedback(
             correction=str(d.get("correction", "")).strip(),
             natural=str(d.get("natural", "")).strip(),
             why=str(d.get("why", "")).strip(),
             result="CORRECT" if correct else "RETRY",
             verb_words=words,
+            meaning_ok=bool(d.get("meaning_ok")),
         )
 
     def reply_instruction(self, sentence: str, fb: Feedback) -> str:
@@ -120,10 +130,12 @@ class PhrasalVerbs(Practice):
                 f"[{said} They used {cur} correctly. Praise them in one short sentence, "
                 f"then introduce the next phrasal verb: {nxt}.]"
             )
-        problem = (
-            f"they used {fb.verb_words} with the wrong meaning" if fb.verb_words
-            else f"they did not use {cur}"
-        )
+        if not fb.verb_words:
+            problem = f"they did not use {cur}"
+        elif fb.meaning_ok:
+            problem = f"the meaning of {fb.verb_words} is right, but a native speaker wouldn't use it like that"
+        else:
+            problem = f"they used {fb.verb_words} with the wrong meaning"
         if self.attempt < self.max_attempts:
             return (
                 f"[{said} It is not right yet: {problem}. Give a short hint without saying a full correct "
@@ -193,11 +205,12 @@ GRADER_SCHEMA = {
     "properties": {
         "verb_words": {"type": "string"},
         "meaning_ok": {"type": "boolean"},
+        "natural_use": {"type": "boolean"},
         "correction": {"type": "string"},
         "natural": {"type": "string"},
         "why": {"type": "string"},
     },
-    "required": ["verb_words", "meaning_ok", "correction", "natural", "why"],
+    "required": ["verb_words", "meaning_ok", "natural_use", "correction", "natural", "why"],
 }
 
 PRACTICES: dict[str, type[Practice]] = {p.key: p for p in (Conversation, PhrasalVerbs)}

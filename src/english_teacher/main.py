@@ -5,7 +5,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from english_teacher import settings
 from english_teacher.audio import SAMPLE_RATE, record_until_enter
+from english_teacher.fluency import Fluency, FluencyLog, measure
+from english_teacher.levels import DEFAULT_LEVEL, LEVELS
 from english_teacher.llm import DEFAULT_MODEL, Feedback, Tutor, parse_feedback, reply_sentences
 from english_teacher.practices import PRACTICES, Practice
 from english_teacher.speech import SpeechPlayer
@@ -40,16 +43,18 @@ class Session:
     def __init__(self, args: argparse.Namespace, practice: Practice):
         self.args = args
         self.practice = practice
+        self.fluency = FluencyLog(practice.key, practice.level.name)
+        print(f"{DIM}Nivel {practice.level.name} · {practice.title}{RESET}")
         print(f"{DIM}Cargando Whisper '{args.stt_model}', {args.model} y Kokoro '{args.voice}'...{RESET}")
         start = time.perf_counter()
         self.stt = Transcriber(args.stt_model)
-        self.tutor = Tutor(args.model, system_prompt=practice.system_prompt())
+        self.tutor = Tutor(practice.system_prompt(), args.model)
         self.tutor.warm_up()
         self.player = SpeechPlayer(Speaker(args.voice, args.speed), args.output)
         print(f"{DIM}Listo en {time.perf_counter() - start:.1f}s. {HELP}{RESET}\n")
         self.log_path = ROOT / "sessions" / f"{datetime.now():%Y-%m-%d_%H%M}.md"
         self.log_path.parent.mkdir(exist_ok=True)
-        self.log_path.write_text(f"# {practice.title} · {datetime.now():%Y-%m-%d %H:%M} ({args.model})\n", encoding="utf-8")
+        self.log_path.write_text(f"# {practice.title} · {practice.level.name} · {datetime.now():%Y-%m-%d %H:%M} ({args.model})\n", encoding="utf-8")
 
     def run(self) -> None:
         opening = self.practice.opening()
@@ -67,22 +72,26 @@ class Session:
                 self.player.repeat()
                 self.player.wait()
                 continue
-            sentence = cmd or self.listen()
+            sentence, fluency = (cmd, None) if cmd else self.listen()
             if sentence:
-                self.respond(sentence)
+                self.respond(sentence, fluency)
 
-    def listen(self) -> str:
+    def listen(self) -> tuple[str, Fluency | None]:
         audio = record_until_enter(self.args.input)
         if len(audio) < 0.3 * SAMPLE_RATE:
             print(f"{DIM}(grabación demasiado corta){RESET}")
-            return ""
+            return "", None
         text = self.stt.transcribe(audio)
         if not text:
             print(f"{DIM}(no se detectó voz){RESET}")
-        return text
+            return "", None
+        return text, measure(audio, text)
 
-    def respond(self, sentence: str) -> None:
+    def respond(self, sentence: str, fluency: Fluency | None = None) -> None:
         print(f"\n{BOLD}Tú:{RESET} {sentence}")
+        if fluency:
+            self.fluency.add(fluency)
+            print(f"  {DIM}⏱  {fluency.describe()}{RESET}")
         status = self.practice.status()
         fb = self.practice.grade(self.tutor, sentence)
         if fb is None:
@@ -101,7 +110,7 @@ class Session:
             fb.reply, fb.raw = reply.reply, reply.raw
         self.practice.after(fb)
         print(f"{BOLD}{GREEN}🗣  Tutor:{RESET} {fb.reply or fb.raw}\n")
-        self.log(sentence, fb, status)
+        self.log(sentence, fb, status, fluency)
         self.player.wait()
         if follow := self.practice.follow_up(fb):
             self.tutor_turn(follow)
@@ -144,12 +153,14 @@ class Session:
         self.player.say(text)
         self.player.wait()
 
-    def log(self, sentence: str | None, fb: Feedback, status: str | None) -> None:
+    def log(self, sentence: str | None, fb: Feedback, status: str | None, fluency: Fluency | None = None) -> None:
         lines = [""]
         if status:
             lines.append(f"*{status}*\n")
         if sentence:
             lines.append(f"**Tú:** {sentence}")
+        if fluency:
+            lines.append(f"- ⏱ {fluency.describe()}")
         if fb.result:
             lines.append(f"- 🎯 {fb.result}")
         if not is_ok(fb.correction):
@@ -186,13 +197,20 @@ def main() -> None:
     parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"modelo de Ollama (por defecto {DEFAULT_MODEL})")
     parser.add_argument("-w", "--stt-model", default=DEFAULT_STT_MODEL, help="tamaño de Whisper")
     parser.add_argument("-v", "--voice", default=DEFAULT_VOICE, help="voz de Kokoro")
-    parser.add_argument("-s", "--speed", type=float, default=1.0, help="velocidad de la voz")
+    parser.add_argument("-s", "--speed", type=float, help="velocidad de la voz (por defecto, la del nivel)")
+    parser.add_argument("-l", "--level", choices=LEVELS, help="nivel (se guarda como predeterminado)")
     parser.add_argument("-i", "--input", type=device_arg, help="dispositivo de entrada")
     parser.add_argument("-o", "--output", type=device_arg, help="dispositivo de salida")
     parser.add_argument("--say-natural", action="store_true", help="decir en voz alta la versión corregida antes de responder")
     args = parser.parse_args()
 
-    practice = PRACTICES[args.practice or choose_practice()]()
+    if args.level:
+        settings.save({"level": args.level})
+    level = LEVELS[args.level or settings.load().get("level", DEFAULT_LEVEL)]
+    if args.speed is None:
+        args.speed = level.speed
+
+    practice = PRACTICES[args.practice or choose_practice()](level)
     session = Session(args, practice)
     try:
         session.run()
@@ -200,10 +218,12 @@ def main() -> None:
         print()
     finally:
         session.player.close()
-        if summary := practice.summary():
-            print(f"{BOLD}{summary}{RESET}")
+        summaries = [s for s in (practice.summary(), session.fluency.summary()) if s]
+        if summaries:
+            for summary in summaries:
+                print(f"{BOLD}{summary}{RESET}")
             with session.log_path.open("a", encoding="utf-8") as f:
-                f.write(f"\n---\n{summary}\n")
+                f.write("\n---\n" + "\n\n".join(summaries) + "\n")
         print(f"{DIM}Sesión guardada en {session.log_path.relative_to(ROOT)}{RESET}")
 
 

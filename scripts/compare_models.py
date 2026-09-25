@@ -14,7 +14,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from english_teacher.levels import DEFAULT_LEVEL, LEVELS
 from english_teacher.llm import Tutor
+from english_teacher.practices import Conversation
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,12 +47,12 @@ def load_cases(path: Path | None) -> list[tuple[str, str]]:
     return [(line.strip(), "") for line in lines if line.strip() and not line.startswith("#")]
 
 
-def run_model(model: str, cases: list[tuple[str, str]]) -> list[dict]:
+def run_model(model: str, cases: list[tuple[str, str]], prompt: str) -> list[dict]:
     print(f"\n=== {model} ===")
-    Tutor(model, keep_history=False).ask("hello")  # warm-up: load the model before timing
+    Tutor(prompt, model, keep_history=False).ask("hello")  # warm-up: load the model before timing
     results = []
     for i, (sentence, expected) in enumerate(cases, 1):
-        tutor = Tutor(model, keep_history=False)  # fresh context per sentence for a fair comparison
+        tutor = Tutor(prompt, model, keep_history=False)  # fresh context per sentence for a fair comparison
         start = time.perf_counter()
         fb = tutor.ask(sentence)
         elapsed = time.perf_counter() - start
@@ -96,11 +98,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-m", "--model", action="append", dest="models", help="modelo de Ollama (repetible)")
     parser.add_argument("-s", "--sentences", type=Path, help="archivo con una frase por línea")
+    parser.add_argument("-l", "--level", choices=LEVELS, default=DEFAULT_LEVEL, help="nivel del prompt de conversación")
     args = parser.parse_args()
 
     models = args.models or ["gemma3:12b", "qwen3:14b"]
     cases = load_cases(args.sentences)
-    all_results = {m: run_model(m, cases) for m in models}
+    prompt = Conversation(LEVELS[args.level]).system_prompt()
+    all_results = {m: run_model(m, cases, prompt) for m in models}
     report = write_report(models, cases, all_results)
     print(f"\nReporte: {report}")
 

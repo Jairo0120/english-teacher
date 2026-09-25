@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from english_teacher.levels import LEVELS, render
 from english_teacher.llm import Feedback
 from english_teacher.practices import PRACTICES, PhrasalVerbs
 
@@ -22,11 +23,11 @@ class FakeTutor:
 def practice(tmp_path):
     verbs = tmp_path / "verbs.txt"
     verbs.write_text("# comment\ngive up\nlook after\nrun into\nput off\nset up\nfind out\n")
-    return PhrasalVerbs(verbs, tmp_path / "progress.json")
+    return PhrasalVerbs(LEVELS["B1"], [verbs], tmp_path / "progress.json")
 
 
-def grade(practice, sentence="x", verb_words="gived up", meaning_ok=True):
-    tutor = FakeTutor({"verb_words": verb_words, "meaning_ok": meaning_ok,
+def grade(practice, sentence="x", verb_words="gived up", meaning_ok=True, natural_use=True):
+    tutor = FakeTutor({"verb_words": verb_words, "meaning_ok": meaning_ok, "natural_use": natural_use,
                        "correction": "Fixed.", "natural": "OK", "why": "Because."})
     return practice.grade(tutor, sentence), tutor
 
@@ -91,7 +92,7 @@ def test_progress_saved_and_seen_verbs_deprioritized(practice, tmp_path):
     saved = json.loads((tmp_path / "progress.json").read_text())
     assert saved[first]["attempts"] == 1 and saved[first]["correct"] == 1
     # With 6 verbs and 1 seen, the top-5 candidates are always the 5 unseen ones
-    reloaded = PhrasalVerbs(tmp_path / "verbs.txt", tmp_path / "progress.json")
+    reloaded = PhrasalVerbs(LEVELS["B1"], [tmp_path / "verbs.txt"], tmp_path / "progress.json")
     assert all(reloaded._pick(exclude=set()) != first for _ in range(50))
 
 
@@ -99,6 +100,35 @@ def test_picks_are_not_always_alphabetical(practice):
     assert len({practice._pick(exclude=set()) for _ in range(100)}) > 3
 
 
-def test_practices_have_prompts():
-    for cls in PRACTICES.values():
-        assert cls.title and cls.description and cls().system_prompt()
+def test_all_prompts_fully_rendered_for_every_level():
+    for level in LEVELS.values():
+        for cls in PRACTICES.values():
+            prompt = cls(level).system_prompt()
+            assert cls.title and cls.description and prompt
+            assert "{{" not in prompt, (level.name, cls.key)
+            assert level.name in prompt
+
+
+def test_render_keeps_json_braces():
+    assert render('{"a": 1} {{name}}', LEVELS["C1"]) == '{"a": 1} C1'
+
+
+def test_level_lists(tmp_path):
+    common = PhrasalVerbs(LEVELS["B1"], progress_path=tmp_path / "p.json").verbs
+    both = PhrasalVerbs(LEVELS["B2"], progress_path=tmp_path / "p.json").verbs
+    advanced = PhrasalVerbs(LEVELS["C1"], progress_path=tmp_path / "p.json").verbs
+    assert "get up" in common and "iron out" not in common
+    assert "iron out" in advanced and "get up" not in advanced
+    assert set(both) == set(common) | set(advanced) and len(both) == len(set(both))
+
+
+def test_strict_levels_require_natural_use(tmp_path):
+    verbs = tmp_path / "v.txt"
+    verbs.write_text("come across\nfall through\niron out\n")
+    b1 = PhrasalVerbs(LEVELS["B1"], [verbs], tmp_path / "p.json")
+    b2 = PhrasalVerbs(LEVELS["B2"], [verbs], tmp_path / "p.json")
+    assert grade(b1, verb_words="came across", natural_use=False)[0].result == "CORRECT"
+    fb, _ = grade(b2, verb_words="came across", natural_use=False)
+    assert fb.result == "RETRY"
+    assert "wouldn't use it like that" in b2.reply_instruction("s", fb)
+    assert grade(b2, verb_words="came across", natural_use=True)[0].result == "CORRECT"

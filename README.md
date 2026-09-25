@@ -15,10 +15,30 @@ uv run english-teacher                   # menú para elegir la práctica
 uv run english-teacher conversation      # conversación libre
 uv run english-teacher phrasal-verbs     # práctica de phrasal verbs
 uv run english-teacher --say-natural     # dice también la versión correcta en voz alta
+uv run english-teacher --level C1       # cambia el nivel (se guarda como predeterminado)
 uv run english-teacher -m qwen3:14b -w medium -s 0.9
 ```
 En la sesión: **Enter** para hablar y Enter para terminar, **escribe** una frase para enviarla como texto, **r** repite la última respuesta, **q** sale.
 Cada sesión se guarda en `sessions/` como Markdown.
+
+## Niveles
+El nivel (por defecto **B2**) cambia cómo habla el tutor, cómo conversa, qué phrasal verbs usa y lo exigente que es. Se define en `src/english_teacher/levels.py` y se inserta en los prompts mediante marcadores `{{...}}`.
+
+| | B1 | B2 | C1 |
+|---|---|---|---|
+| Inglés del tutor | Sencillo, sin idioms | Natural, con idioms y collocations | Nativo culto, con matices |
+| Conversación | 1-2 frases, pregunta sencilla | Preguntas abiertas (opiniones, hipótesis); te pide desarrollar las respuestas cortas; sugiere versiones más ricas | Además te lleva la contraria y señala vocabulario repetido y registro |
+| Phrasal verbs | Lista común (88) | Común + avanzada (165) | Avanzada (77) |
+| Evaluación | Significado correcto | Significado correcto **y** uso natural | Igual que B2 |
+| Velocidad de voz | 0.9 | 1.0 | 1.1 |
+
+## Fluidez
+Cuando hablas (no cuando escribes), cada respuesta muestra:
+- **ppm**: palabras por minuto, desde que empiezas a hablar hasta que terminas (incluye pausas). Referencia: ~150 ppm en conversación nativa.
+- **Pausas largas**: silencios de 0.7 s o más dentro de la respuesta, y la más larga.
+- **% del tiempo hablando**.
+
+Las pausas se detectan con el VAD (Silero) sobre el audio, porque Whisper estira las palabras y esconde los silencios. Al salir ves la media de la sesión comparada con tus últimas 5 sesiones. Todo se guarda en `progress/fluency.csv`.
 
 ## Prácticas
 | Práctica | Cómo funciona |
