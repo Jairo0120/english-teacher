@@ -15,6 +15,7 @@ uv run english-teacher                   # menú para elegir la práctica
 uv run english-teacher conversation      # conversación libre
 uv run english-teacher phrasal-verbs     # práctica de phrasal verbs
 uv run english-teacher tenses            # tiempos verbales
+uv run english-teacher paraphrase        # escuchar un texto y contarlo con tus palabras
 uv run english-teacher roleplay          # escena con un personaje
 uv run english-teacher --say-natural     # dice también la versión correcta en voz alta
 uv run english-teacher --level C1       # cambia el nivel (se guarda como predeterminado)
@@ -48,6 +49,7 @@ Las pausas se detectan con el VAD (Silero) sobre el audio, porque Whisper estira
 |---|---|
 | `conversation` | Charla libre. El tutor corrige cada frase (gramática y naturalidad) y sigue la conversación. |
 | `tenses` | Tiempos verbales complejos (present perfect continuous, past perfect, future perfect, condicionales 2.º/3.º/mixtos, wish, modales en perfecto, estilo indirecto...). Alterna preguntas que obligan a usar el tiempo con frases en español para traducir, pensadas para los errores que vienen del español ("llevo tres años...", "ojalá hubiera..."). Dos intentos; si fallas, te dice la versión correcta. La primera vez propone un diagnóstico (una frase por estructura) y después prioriza las que más te cuestan (`progress/tenses.json`, estructuras y frases en `data/tenses.yaml`). |
+| `paraphrase` | El tutor habla ~30 s sobre un tema (noticia, opinión, anécdota o explicación; tema fijo o variado de `data/paraphrase_topics.txt`) y tú lo cuentas con tus palabras. El texto no se muestra hasta después (**r** para volver a escucharlo). Evalúa qué ideas clave cubriste, si dijiste algo incorrecto y el **% de copia literal** (secuencias de 3 palabras idénticas al original, calculado por el programa); después muestra tus errores, una versión modelo y el texto original. El siguiente texto se genera mientras lees. |
 | `roleplay` | El tutor presenta una escena (hotel sin reserva, entrevista de trabajo, vuelo cancelado...) y un personaje con su propia voz habla contigo sin salirse del papel. Tienes un objetivo que conseguir; el personaje mete complicaciones en los turnos 3 y 6. Las correcciones salen en pantalla sin interrumpir la escena y al final hay un repaso hablado con tus errores más importantes y expresiones útiles. Puedes elegir una de las escenas de `data/scenarios/` o pedir que invente una (con un tema opcional). |
 | `phrasal-verbs` | El tutor explica un phrasal verb en inglés con un ejemplo y tú creas una frase. Tienes 2 intentos; si fallas, te da un ejemplo y pasa al siguiente. Prioriza los verbos que no has visto o que más te cuestan (progreso en `progress/phrasal_verbs.json`, lista en `data/phrasal_verbs.txt`). |
 

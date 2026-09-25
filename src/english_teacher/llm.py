@@ -3,7 +3,7 @@
 import json
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import ollama
@@ -23,6 +23,7 @@ class Feedback:
     verb_words: str = ""  # phrasal verbs practice: the words the student used for the target
     meaning_ok: bool = False  # phrasal verbs practice: the target was used with the right meaning
     goal_met: bool = False  # role-play: the student achieved the goal of the scene
+    lines: list[str] = field(default_factory=list)  # practice-specific feedback to show instead of the fields above
     reply: str = ""
     raw: str = ""
 

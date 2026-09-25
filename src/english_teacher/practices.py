@@ -8,7 +8,8 @@ A practice works in one of two ways:
   Smaller models are much more reliable when grading and talking are separate tasks.
 
 Optional hooks: `setup` (interactive choices before the session), `intro` (fixed narrator text),
-`announce` (text shown on screen before each turn),
+`announce` (text shown on screen before each turn), `prepare` + `round_pending`/`next_round` (the
+practice presents new material, e.g. a text to listen to, when the student presses Enter),
 `voice` (voice for the tutor's replies), `finished` (end the session), `help_context` (the "h"
 command) and `debrief` (review at the end).
 
@@ -18,6 +19,7 @@ To add a new practice: subclass Practice, write prompts/<prompt>.md and register
 import json
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +64,23 @@ class Practice:
     def announce(self) -> str | None:
         """Text shown on screen (not spoken) before each student turn, e.g. a sentence to translate."""
         return None
+
+    round_prompt = "Enter para continuar"
+
+    def prepare(self, tutor: Tutor) -> None:
+        """Called once the tutor is ready, before the intro (e.g. to start generating material)."""
+
+    def round_pending(self) -> bool:
+        """True when the practice must present new material (after the student presses Enter)."""
+        return False
+
+    def next_round(self, tutor: Tutor) -> str:
+        """The new material, spoken by the narrator but not shown on screen."""
+        raise NotImplementedError
+
+    def late_feedback(self) -> list[str]:
+        """Feedback prepared in the background after the reply, shown before the next round."""
+        return []
 
     def wrap(self, sentence: str) -> str:
         """Single-call practices: message actually sent to the tutor for the student's sentence."""
@@ -647,6 +666,157 @@ class Tenses(Practice):
         return text
 
 
+def reuse_ratio(original: str, retelling: str, n: int = 3) -> float:
+    """Share of the retelling's n-word sequences that appear word for word in the original."""
+
+    def grams(text: str) -> set[tuple[str, ...]]:
+        words = re.findall(r"[a-z0-9']+", text.lower())
+        return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
+
+    mine = grams(retelling)
+    return len(mine & grams(original)) / len(mine) if mine else 0.0
+
+
+@dataclass
+class ListeningText:
+    title: str
+    text: str
+    points: list[str]
+
+
+class Paraphrase(Practice):
+    key = "paraphrase"
+    title = "Parafraseo"
+    description = "El tutor habla unos 30 segundos sobre un tema y tú lo cuentas con tus propias palabras."
+    prompt = "paraphrase"
+    round_prompt = "Enter para escuchar el texto"
+    words = {"B1": (40, 55), "B2": (60, 75), "C1": (75, 90)}  # ~30 s at each level's voice speed
+    kinds = ["a short news report", "an opinion", "a personal anecdote", "a short explanation of how something works"]
+    HIGH_REUSE = 0.4
+
+    def __init__(self, level: Level = LEVELS["B2"], topic: str | None = None,
+                 topics_path: Path = ROOT / "data" / "paraphrase_topics.txt"):
+        super().__init__(level)
+        lines = topics_path.read_text(encoding="utf-8").splitlines()
+        self.topics = [t.strip() for t in lines if t.strip() and not t.startswith("#")]
+        self.topic = topic  # None: ask in setup; "": a different topic each round
+        self.current: ListeningText | None = None
+        self.titles: list[str] = []  # texts already used in this session, to avoid repeats
+        self.results: list[tuple[int, float]] = []  # (key ideas covered, reuse) per round
+        self._pending = True
+        self._future = None  # next text
+        self._review = None  # mistakes + model paraphrase of the last answer
+        self._pool = ThreadPoolExecutor(max_workers=1)  # Ollama serves one request at a time anyway
+
+    def setup(self, model: str) -> None:
+        if self.topic is None:
+            self.topic = input("\nTema (Enter = uno distinto cada vez) › ").strip()
+
+    def intro(self) -> str:
+        return ("I'll talk about something for about thirty seconds. Listen carefully, and then tell me "
+                "what I said, in your own words. Try not to repeat my exact sentences.")
+
+    # --- rounds ---------------------------------------------------------------
+
+    def prepare(self, tutor: Tutor) -> None:
+        self._prefetch(tutor)
+
+    def round_pending(self) -> bool:
+        return self._pending
+
+    def next_round(self, tutor: Tutor) -> str:
+        if self._future is None:
+            self._prefetch(tutor)
+        self.current = self._future.result()
+        self._future = None
+        self.titles.append(self.current.title)
+        self._pending = False
+        return self.current.text
+
+    def _prefetch(self, tutor: Tutor) -> None:
+        """Generate the next text in the background while the student reads the feedback."""
+        self._future = self._pool.submit(self._generate, tutor)
+
+    def _generate(self, tutor: Tutor) -> ListeningText:
+        topic = self.topic or random.choice([t for t in self.topics if t not in self.titles] or self.topics)
+        low, high = self.words.get(self.level.name, self.words["B2"])
+        request = f"Topic: {topic}\nKind of text: {random.choice(self.kinds)}"
+        if self.titles:
+            request += f"\nIt must be different from these earlier texts: {'; '.join(self.titles)}"
+        d = tutor.structured(
+            render(load_prompt("paraphrase_text"), self.level, words=str(low), max_words=str(high)),
+            request, TEXT_SCHEMA,
+        )
+        return ListeningText(d["title"], d["text"], [d[f"point_{i}"] for i in range(1, 5)])
+
+    def announce(self) -> str | None:
+        if self.current and not self._pending:
+            return "🎧 Cuenta lo que escuchaste con tus propias palabras (r = volver a escuchar)"
+        return None
+
+    def status(self) -> str:
+        return f"Texto {len(self.titles)}"
+
+    # --- grading --------------------------------------------------------------
+
+    def grade(self, tutor: Tutor, sentence: str) -> Feedback:
+        # Two calls: a short one (ideas covered + spoken comment) so the student hears back quickly,
+        # and a longer one (mistakes + model paraphrase) that runs in the background while they listen
+        text = self.current
+        reuse = reuse_ratio(text.text, sentence)
+        points = "\n".join(f"{i}. {p}" for i, p in enumerate(text.points, 1))
+        d = tutor.structured(
+            render(load_prompt("paraphrase_grader"), self.level),
+            f"Original text: {text.text}\n\nKey ideas:\n{points}\n\n"
+            f"Copied word for word: {reuse:.0%}\n\nStudent's retelling: {sentence}",
+            PARAPHRASE_GRADER_SCHEMA,
+        )
+        covered = [bool(d.get(f"covered_{i}")) for i in range(1, 5)]
+        self.results.append((sum(covered), reuse))
+        lines = [f"  📊 Ideas: {sum(covered)}/4 · copiado literal: {reuse:.0%}"
+                 + ("  ⚠️ parafrasea más" if reuse > self.HIGH_REUSE else "")]
+        lines += [f"     {'✅' if ok else '❌'} {point}" for ok, point in zip(covered, text.points)]
+        if wrong := str(d.get("wrong_info", "")).strip():
+            lines.append(f"  ⚠️  Dato incorrecto: {wrong}")
+        self._review = self._pool.submit(self._make_review, tutor, text.text, sentence)
+        self._prefetch(tutor)  # queued after the review: the next text is ready when the student presses Enter
+        return Feedback(reply=str(d.get("comment", "")).strip(), lines=lines)
+
+    def _make_review(self, tutor: Tutor, original: str, retelling: str) -> list[str]:
+        d = tutor.structured(
+            render(load_prompt("paraphrase_review"), self.level),
+            f"Original text: {original}\n\nStudent's retelling: {retelling}",
+            PARAPHRASE_REVIEW_SCHEMA,
+        )
+        lines = [f"  ✏️  {m['wrong']} → {m['fix']}" for m in d.get("mistakes", [])[:3]]
+        lines.append(f"  💡 Versión modelo: {str(d.get('model', '')).strip()}")
+        lines.append(f"  📝 Texto original: {original}")
+        return lines
+
+    def late_feedback(self) -> list[str]:
+        if self._review is None:
+            return []
+        lines, self._review = self._review.result(), None
+        return lines
+
+    def quick_reply(self, sentence: str, fb: Feedback) -> str:
+        return f"{fb.reply} Press Enter when you're ready for the next one."
+
+    def reply_instruction(self, sentence: str, fb: Feedback | None) -> None:
+        return None
+
+    def after(self, fb: Feedback) -> None:
+        self._pending = True
+
+    def summary(self) -> str | None:
+        if not self.results:
+            return None
+        covered = sum(c for c, _ in self.results)
+        reuse = sum(r for _, r in self.results) / len(self.results)
+        return (f"Parafraseo: {len(self.results)} textos · ideas cubiertas {covered}/{4 * len(self.results)} "
+                f"· copiado literal medio {reuse:.0%}")
+
+
 # Three separate fields: with an array, Gemma sometimes returns a single long suggestion
 HELP_SCHEMA = {
     "type": "object",
@@ -702,6 +872,38 @@ TENSES_GRADER_SCHEMA = {
     "required": ["verb_words", "target_ok", "meaning_ok", "correction", "natural", "why_es"],
 }
 
+TEXT_SCHEMA = {
+    "type": "object",
+    "properties": {k: {"type": "string"} for k in ("title", "text", "point_1", "point_2", "point_3", "point_4")},
+    "required": ["title", "text", "point_1", "point_2", "point_3", "point_4"],
+}
+
+PARAPHRASE_GRADER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **{f"covered_{i}": {"type": "boolean"} for i in range(1, 5)},
+        "wrong_info": {"type": "string"},
+        "comment": {"type": "string"},
+    },
+    "required": [*(f"covered_{i}" for i in range(1, 5)), "wrong_info", "comment"],
+}
+
+PARAPHRASE_REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "mistakes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"wrong": {"type": "string"}, "fix": {"type": "string"}},
+                "required": ["wrong", "fix"],
+            },
+        },
+        "model": {"type": "string"},
+    },
+    "required": ["mistakes", "model"],
+}
+
 INVENT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -730,4 +932,4 @@ GRADER_SCHEMA = {
     "required": ["verb_words", "meaning_ok", "natural_use", "correction", "natural", "why"],
 }
 
-PRACTICES: dict[str, type[Practice]] = {p.key: p for p in (Conversation, PhrasalVerbs, Tenses, RolePlay)}
+PRACTICES: dict[str, type[Practice]] = {p.key: p for p in (Conversation, PhrasalVerbs, Tenses, Paraphrase, RolePlay)}

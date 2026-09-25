@@ -51,6 +51,7 @@ class Session:
         self.stt = Transcriber(args.stt_model)
         self.tutor = Tutor(practice.system_prompt(), args.model)
         self.tutor.warm_up()
+        practice.prepare(self.tutor)
         self.player = SpeechPlayer(Speaker(args.voice, args.speed), args.output)
         print(f"{DIM}Listo en {time.perf_counter() - start:.1f}s. {HELP}{RESET}\n")
         self.log_path = ROOT / "sessions" / f"{datetime.now():%Y-%m-%d_%H%M}.md"
@@ -68,6 +69,15 @@ class Session:
         if opening := self.practice.opening():
             self.tutor_turn(opening)
         while not self.practice.finished:
+            if self.practice.round_pending():
+                if late := self.practice.late_feedback():
+                    print("\n".join(late) + "\n")
+                    with self.log_path.open("a", encoding="utf-8") as f:
+                        f.write("\n".join(line.strip() for line in late) + "\n")
+                if input(f"{BOLD}⏎  {self.practice.round_prompt} (q = salir) › {RESET}").strip().lower() == "q":
+                    break
+                self.present_round()
+                continue
             if note := self.practice.announce():
                 print(f"  {BOLD}{YELLOW}{note}{RESET}")
             status = self.practice.status()
@@ -96,6 +106,32 @@ class Session:
             print(f"{DIM}(no se detectó voz){RESET}")
             return "", None
         return text, measure(audio, text)
+
+    def evaluate(self, sentence: str) -> Feedback | None:
+        if type(self.practice).grade is Practice.grade:  # single-call practice: nothing to grade
+            return None
+        print(f"  {DIM}(evaluando...){RESET}", end="\r", flush=True)
+        fb = self.practice.grade(self.tutor, sentence)
+        print(" " * 20, end="\r")
+        return fb
+
+    def present_round(self) -> None:
+        """New material from the practice (e.g. a text to listen to): spoken, not shown."""
+        print(f"{DIM}Preparando...{RESET}")
+        text = self.practice.next_round(self.tutor)
+        print(f"{BOLD}🔊 Escucha...{RESET}\n")
+        self.player.new_utterance()
+        self.player.say(text)
+        self.player.wait()
+        self.heard(text)
+        with self.log_path.open("a", encoding="utf-8") as f:
+            f.write(f"\n**Texto:** {text}\n")
+
+    def show(self, fb: Feedback) -> None:
+        if fb.lines:
+            print("\n".join(fb.lines))
+        else:
+            show_feedback(fb)
 
     def show_help(self) -> None:
         suggestions = self.practice.help(self.tutor, self.last_line)
@@ -135,9 +171,9 @@ class Session:
             # The reply doesn't depend on the grade: start speaking right away and grade while it plays
             reply = self.speak(self.practice.reply_instruction(sentence, None), fields=False)
             fb = self.practice.grade(self.tutor, sentence)
-            show_feedback(fb)
+            self.show(fb)
             fb.reply, fb.raw = reply.reply, reply.raw
-        elif (fb := self.practice.grade(self.tutor, sentence)) is None:
+        elif (fb := self.evaluate(sentence)) is None:
             # Single call: feedback fields and REPLY come in the same answer
             fb = self.speak(self.practice.wrap(sentence), fields=True)
             if fb.parsed:
@@ -147,7 +183,7 @@ class Session:
         else:
             # Graded: show the feedback right away, then the tutor says what the practice asks for:
             # first any fixed text (plays immediately), then the model's reply if one is needed
-            show_feedback(fb)
+            self.show(fb)
             self.player.new_utterance()
             if self.args.say_natural:
                 self.say_natural(fb)
@@ -227,6 +263,7 @@ class Session:
             lines.append(f"**Tú:** {sentence}")
         if fluency:
             lines.append(f"- ⏱ {fluency.describe()}")
+        lines += [line.strip() for line in fb.lines]
         if fb.result:
             lines.append(f"- 🎯 {fb.result}")
         if not is_ok(fb.correction):
