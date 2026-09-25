@@ -1,0 +1,10 @@
+title: Pedido equivocado en un restaurante
+name: Waiter
+character: A waiter at a busy Italian restaurant on a Friday night. Friendly, but in a hurry.
+voice: am_puck
+student_role: A customer having dinner with a friend.
+setting: You ordered a vegetarian lasagna twenty minutes ago. The waiter just brought you a meat lasagna, and your friend has almost finished their meal.
+goal: Get the right dish quickly, or a fair solution such as a discount or not paying for it.
+twists:
+  - The kitchen has run out of vegetarian lasagna.
+  - The waiter says the new dish will take another twenty-five minutes.

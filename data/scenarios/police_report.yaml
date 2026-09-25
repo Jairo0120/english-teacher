@@ -1,0 +1,10 @@
+title: Denunciar un robo
+name: Police officer
+character: A police officer at the front desk of a police station. Calm, methodical and asks for precise details.
+voice: bm_fable
+student_role: A tourist whose phone and wallet have been stolen.
+setting: Your phone and wallet were stolen about an hour ago on a crowded tram. You're at the police station to report it, and you need a police report for your insurance.
+goal: Describe exactly what happened, what was stolen and the thief, and get a copy of the police report.
+twists:
+  - The officer asks you to describe the thief in detail, but you only saw them for a second.
+  - The officer says the report will only be ready in three days, but you fly home tomorrow.

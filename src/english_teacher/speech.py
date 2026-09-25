@@ -19,15 +19,16 @@ class SpeechPlayer:
     def __init__(self, speaker: Speaker, device: int | str | None = None):
         self.speaker = speaker
         self.last: list[np.ndarray] = []  # audio of the last utterance, for "repeat"
-        self._texts: queue.Queue[str] = queue.Queue()
+        self._texts: queue.Queue[tuple[str, str | None]] = queue.Queue()
         self._audio: queue.Queue[np.ndarray] = queue.Queue()
         self._out = sd.OutputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", device=device)
         self._out.start()
         threading.Thread(target=self._synth_loop, daemon=True).start()
         threading.Thread(target=self._play_loop, daemon=True).start()
 
-    def say(self, text: str) -> None:
-        self._texts.put(text)
+    def say(self, text: str, voice: str | None = None) -> None:
+        """Queue text to be spoken; voice=None uses the speaker's default (narrator) voice."""
+        self._texts.put((text, voice))
 
     def repeat(self) -> None:
         for chunk in self.last:
@@ -47,9 +48,9 @@ class SpeechPlayer:
 
     def _synth_loop(self) -> None:
         while True:
-            text = self._texts.get()
+            text, voice = self._texts.get()
             try:
-                for chunk in self.speaker.stream(text):
+                for chunk in self.speaker.stream(text, voice):
                     self.last.append(chunk)
                     self._audio.put(chunk)
             finally:

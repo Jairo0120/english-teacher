@@ -1,0 +1,10 @@
+title: Pedir un aumento
+name: Manager
+character: Your manager at work. Values you, but says the budget is tight this year.
+voice: am_michael
+student_role: An employee who has worked at the company for three years.
+setting: You asked your manager for a meeting to talk about your salary. In the last year you've taken on more responsibilities and led an important project.
+goal: Get a salary increase of at least ten percent, or a clear plan to get it soon.
+twists:
+  - The manager says there's no budget for raises until next year.
+  - The manager offers a new job title with more responsibilities but no extra money.
