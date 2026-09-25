@@ -1,0 +1,89 @@
+# Common phrasal verbs (B1-B2). One per line; lines starting with # are ignored.
+ask out
+back up
+blow up
+break down
+break up
+bring up
+calm down
+call off
+carry on
+catch up
+check in
+check out
+cheer up
+come across
+come up with
+count on
+cut down on
+deal with
+drop by
+drop out
+eat out
+end up
+fall apart
+figure out
+fill in
+fill out
+find out
+get along
+get around
+get away with
+get by
+get over
+get rid of
+get up
+give away
+give in
+give up
+go ahead
+go on
+go over
+grow up
+hand in
+hang out
+hang up
+hold on
+keep up with
+kick off
+leave out
+let down
+look after
+look forward to
+look into
+look up
+look up to
+make up
+make up for
+mess up
+move on
+pass away
+pass out
+pick up
+point out
+put off
+put on
+put up with
+run into
+run out of
+set up
+settle down
+show off
+show up
+shut down
+sort out
+stand out
+stick to
+take after
+take off
+take on
+take over
+talk into
+think over
+throw away
+try on
+turn down
+turn up
+wake up
+wear out
+work out

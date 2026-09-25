@@ -1,5 +1,6 @@
 """Tutor LLM via Ollama: sends the student's sentence and parses the structured feedback."""
 
+import json
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import ollama
 
-PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "tutor.md"
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 DEFAULT_MODEL = "gemma3:12b"
 FIELDS = ("CORRECTION", "NATURAL", "WHY", "REPLY")
 _FIELD_RE = re.compile(rf"^\s*\**({'|'.join(FIELDS)})\**\s*:\s*\**\s*", re.MULTILINE)
@@ -18,6 +19,8 @@ class Feedback:
     correction: str = ""
     natural: str = ""
     why: str = ""
+    result: str = ""  # only in practices that grade the answer (CORRECT / RETRY)
+    verb_words: str = ""  # phrasal verbs practice: the words the student used for the target
     reply: str = ""
     raw: str = ""
 
@@ -26,8 +29,8 @@ class Feedback:
         return bool(self.correction and self.reply)
 
 
-def load_system_prompt() -> str:
-    return PROMPT_PATH.read_text(encoding="utf-8")
+def load_prompt(name: str = "conversation") -> str:
+    return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
 def parse_feedback(text: str) -> Feedback:
@@ -43,9 +46,10 @@ def parse_feedback(text: str) -> Feedback:
 _SENTENCE_END = re.compile(r"[.!?]+[\"')]*\s+")
 
 
-def reply_sentences(pieces: Iterator[str], out: list[str]) -> Iterator[str]:
+def reply_sentences(pieces: Iterator[str], out: list[str], field: bool = True) -> Iterator[str]:
     """Consume streamed model output and yield REPLY sentences as soon as each one is complete.
 
+    With field=False the whole output is the reply (plain spoken text, no fields).
     The whole raw text is accumulated into `out[0]` so the caller can parse the feedback afterwards.
     """
     text, sent = "", 0  # sent: offset inside the reply already yielded
@@ -53,13 +57,13 @@ def reply_sentences(pieces: Iterator[str], out: list[str]) -> Iterator[str]:
     for piece in pieces:
         text += piece
         out[0] = text
-        reply = _reply_part(text)
+        reply = _reply_part(text) if field else text
         if reply is None:
             continue
         while m := _SENTENCE_END.search(reply, sent):
             yield reply[sent:m.end()].strip()
             sent = m.end()
-    reply = _reply_part(text)
+    reply = _reply_part(text) if field else text
     if reply is not None and reply[sent:].strip():
         yield reply[sent:].strip()
 
@@ -77,13 +81,14 @@ class Tutor:
         keep_history: bool = True,
         max_turns: int = 10,
         keep_alive: str = "30m",
+        system_prompt: str | None = None,
     ):
         self.model = model
         self.client = ollama.Client(host=host)
         self.keep_history = keep_history
         self.max_turns = max_turns
         self.keep_alive = keep_alive  # keep the model in VRAM while the student thinks
-        self.system = {"role": "system", "content": load_system_prompt()}
+        self.system = {"role": "system", "content": system_prompt or load_prompt()}
         self.history: list[dict] = []
         self._think: bool | None = False
 
@@ -101,6 +106,22 @@ class Tutor:
             # Only the last max_turns exchanges, so the context (and latency) doesn't grow forever
             self.history = [*self.history, user, {"role": "assistant", "content": "".join(parts)}]
             self.history = self.history[-2 * self.max_turns:]
+
+    def structured(self, system: str, content: str, schema: dict) -> dict:
+        """One-off call (no history) whose answer is forced to match a JSON schema."""
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+        kwargs = {"think": self._think} if self._think is not None else {}
+        try:
+            resp = self.client.chat(
+                model=self.model, messages=messages, format=schema,
+                options={"temperature": 0}, keep_alive=self.keep_alive, **kwargs,
+            )
+        except ollama.ResponseError as e:
+            if self._think is None or "think" not in str(e).lower():
+                raise
+            self._think = None
+            return self.structured(system, content, schema)
+        return json.loads(resp.message.content or "{}")
 
     def warm_up(self) -> None:
         """Load the model into VRAM so the first real answer is fast."""

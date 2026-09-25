@@ -7,12 +7,12 @@ from pathlib import Path
 
 from english_teacher.audio import SAMPLE_RATE, record_until_enter
 from english_teacher.llm import DEFAULT_MODEL, Feedback, Tutor, parse_feedback, reply_sentences
+from english_teacher.practices import PRACTICES, Practice
 from english_teacher.speech import SpeechPlayer
 from english_teacher.stt import DEFAULT_STT_MODEL, Transcriber
 from english_teacher.tts import DEFAULT_VOICE, Speaker
 
 ROOT = Path(__file__).resolve().parents[2]
-GREETING = "Hi! I'm your English tutor. What would you like to talk about today?"
 HELP = "Enter = hablar · escribe una frase = enviarla como texto · r = repetir · q = salir"
 
 DIM, BOLD, RED, GREEN, YELLOW, CYAN, RESET = "\033[2m", "\033[1m", "\033[31m", "\033[32m", "\033[33m", "\033[36m", "\033[0m"
@@ -23,11 +23,11 @@ def is_ok(value: str) -> bool:
 
 
 def show_feedback(fb: Feedback) -> None:
-    if not fb.parsed:
-        print(f"{YELLOW}(el modelo no respetó el formato){RESET}\n{fb.raw}")
-        return
-    if is_ok(fb.correction) and is_ok(fb.natural):
-        print(f"  {GREEN}✅ ¡Perfecto!{RESET}")
+    if fb.result:
+        correct = fb.result.upper().startswith("CORRECT")
+        print(f"  {GREEN}🎯 ¡Bien usado!{RESET}" if correct else f"  {YELLOW}🔁 Todavía no{RESET}")
+    if fb.correction and is_ok(fb.correction) and is_ok(fb.natural):
+        print(f"  {GREEN}✅ {'Gramática perfecta' if fb.result else '¡Perfecto!'}{RESET}")
     if not is_ok(fb.correction):
         print(f"  {RED}✏️  Corrección:{RESET} {fb.correction}")
     if not is_ok(fb.natural):
@@ -37,23 +37,30 @@ def show_feedback(fb: Feedback) -> None:
 
 
 class Session:
-    def __init__(self, args: argparse.Namespace):
+    def __init__(self, args: argparse.Namespace, practice: Practice):
         self.args = args
+        self.practice = practice
         print(f"{DIM}Cargando Whisper '{args.stt_model}', {args.model} y Kokoro '{args.voice}'...{RESET}")
         start = time.perf_counter()
         self.stt = Transcriber(args.stt_model)
-        self.tutor = Tutor(args.model)
+        self.tutor = Tutor(args.model, system_prompt=practice.system_prompt())
         self.tutor.warm_up()
         self.player = SpeechPlayer(Speaker(args.voice, args.speed), args.output)
         print(f"{DIM}Listo en {time.perf_counter() - start:.1f}s. {HELP}{RESET}\n")
         self.log_path = ROOT / "sessions" / f"{datetime.now():%Y-%m-%d_%H%M}.md"
         self.log_path.parent.mkdir(exist_ok=True)
-        self.log_path.write_text(f"# Sesión {datetime.now():%Y-%m-%d %H:%M} ({args.model})\n", encoding="utf-8")
+        self.log_path.write_text(f"# {practice.title} · {datetime.now():%Y-%m-%d %H:%M} ({args.model})\n", encoding="utf-8")
 
     def run(self) -> None:
-        self.speak_line(GREETING)
+        opening = self.practice.opening()
+        if opening:
+            self.tutor_turn(opening)
+        else:
+            self.speak_line(self.practice.greeting)
         while True:
-            cmd = input(f"{BOLD}🎙  Enter para hablar › {RESET}").strip()
+            status = self.practice.status()
+            tag = f"{CYAN}[{status}]{RESET} " if status else ""
+            cmd = input(f"{tag}{BOLD}🎙  Enter para hablar › {RESET}").strip()
             if cmd.lower() == "q":
                 break
             if cmd.lower() == "r":
@@ -62,7 +69,7 @@ class Session:
                 continue
             sentence = cmd or self.listen()
             if sentence:
-                self.turn(sentence)
+                self.respond(sentence)
 
     def listen(self) -> str:
         audio = record_until_enter(self.args.input)
@@ -74,24 +81,57 @@ class Session:
             print(f"{DIM}(no se detectó voz){RESET}")
         return text
 
-    def turn(self, sentence: str) -> None:
+    def respond(self, sentence: str) -> None:
         print(f"\n{BOLD}Tú:{RESET} {sentence}")
+        status = self.practice.status()
+        fb = self.practice.grade(self.tutor, sentence)
+        if fb is None:
+            # Single call: feedback fields and REPLY come in the same answer
+            fb = self.speak(self.practice.wrap(sentence), fields=True)
+            if fb.parsed:
+                show_feedback(fb)
+            else:
+                print(f"{YELLOW}(el modelo no respetó el formato){RESET}\n{fb.raw}")
+        else:
+            # Graded: show the feedback right away, then the tutor says what the practice asks for
+            show_feedback(fb)
+            if self.args.say_natural:
+                self.say_natural(fb)
+            reply = self.speak(self.practice.reply_instruction(sentence, fb), fields=False)
+            fb.reply, fb.raw = reply.reply, reply.raw
+        self.practice.after(fb)
+        print(f"{BOLD}{GREEN}🗣  Tutor:{RESET} {fb.reply or fb.raw}\n")
+        self.log(sentence, fb, status)
+        self.player.wait()
+        if follow := self.practice.follow_up(fb):
+            self.tutor_turn(follow)
+
+    def tutor_turn(self, instruction: str) -> None:
+        """The tutor speaks on its own (opening, next exercise), following a hidden instruction."""
+        fb = self.speak(instruction, fields=False)
+        print(f"{BOLD}{GREEN}🗣  Tutor:{RESET} {fb.reply}\n")
+        self.log(None, fb, self.practice.status())
+        self.player.wait()
+
+    def speak(self, message: str, fields: bool) -> Feedback:
+        """Send `message` to the tutor and speak its reply sentence by sentence while it is generated.
+
+        fields=True: the answer has CORRECTION/NATURAL/WHY/REPLY and only REPLY is spoken.
+        fields=False: the whole answer is plain spoken text.
+        """
         self.player.new_utterance()
         raw: list[str] = []
-        spoken = []
-        # REPLY is the last field: sentences start playing while the model is still writing them
-        for s in reply_sentences(self.tutor.stream(sentence), raw):
-            if not spoken and self.args.say_natural:
+        spoken = 0
+        for s in reply_sentences(self.tutor.stream(message), raw, field=fields):
+            if not spoken and fields and self.args.say_natural:
                 self.say_natural(parse_feedback(raw[0]))
-            spoken.append(s)
+            spoken += 1
             self.player.say(s)
-        fb = parse_feedback(raw[0])
-        if not spoken:  # broken format: at least say something
-            self.player.say(fb.raw)
-        show_feedback(fb)
-        print(f"{BOLD}{GREEN}🗣  Tutor:{RESET} {fb.reply or fb.raw}\n")
-        self.log(sentence, fb)
-        self.player.wait()
+        text = raw[0] if raw else ""
+        fb = parse_feedback(text) if fields else Feedback(reply=text.strip(), raw=text)
+        if not spoken and text.strip():  # broken format: at least say something
+            self.player.say(fb.reply or text)
+        return fb
 
     def say_natural(self, fb: Feedback) -> None:
         better = fb.natural if not is_ok(fb.natural) else fb.correction
@@ -104,8 +144,14 @@ class Session:
         self.player.say(text)
         self.player.wait()
 
-    def log(self, sentence: str, fb: Feedback) -> None:
-        lines = ["", f"**Tú:** {sentence}"]
+    def log(self, sentence: str | None, fb: Feedback, status: str | None) -> None:
+        lines = [""]
+        if status:
+            lines.append(f"*{status}*\n")
+        if sentence:
+            lines.append(f"**Tú:** {sentence}")
+        if fb.result:
+            lines.append(f"- 🎯 {fb.result}")
         if not is_ok(fb.correction):
             lines.append(f"- ✏️ {fb.correction}")
         if not is_ok(fb.natural):
@@ -117,12 +163,26 @@ class Session:
             f.write("\n".join(lines) + "\n")
 
 
+def choose_practice() -> str:
+    practices = list(PRACTICES.values())
+    print(f"{BOLD}¿Qué quieres practicar?{RESET}")
+    for i, p in enumerate(practices, 1):
+        print(f"  {i}. {p.title} {DIM}— {p.description}{RESET}")
+    while True:
+        choice = input("› ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(practices):
+            return practices[int(choice) - 1].key
+        if choice in PRACTICES:
+            return choice
+
+
 def device_arg(value: str) -> int | str:
     return int(value) if value.isdigit() else value
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tutor de inglés local por voz.")
+    parser.add_argument("practice", nargs="?", choices=PRACTICES, help="tipo de práctica (si no, muestra un menú)")
     parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"modelo de Ollama (por defecto {DEFAULT_MODEL})")
     parser.add_argument("-w", "--stt-model", default=DEFAULT_STT_MODEL, help="tamaño de Whisper")
     parser.add_argument("-v", "--voice", default=DEFAULT_VOICE, help="voz de Kokoro")
@@ -132,13 +192,18 @@ def main() -> None:
     parser.add_argument("--say-natural", action="store_true", help="decir en voz alta la versión corregida antes de responder")
     args = parser.parse_args()
 
-    session = Session(args)
+    practice = PRACTICES[args.practice or choose_practice()]()
+    session = Session(args, practice)
     try:
         session.run()
     except (KeyboardInterrupt, EOFError):
         print()
     finally:
         session.player.close()
+        if summary := practice.summary():
+            print(f"{BOLD}{summary}{RESET}")
+            with session.log_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n---\n{summary}\n")
         print(f"{DIM}Sesión guardada en {session.log_path.relative_to(ROOT)}{RESET}")
 
 

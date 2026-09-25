@@ -11,12 +11,22 @@ Después de la descarga todo funciona sin conexión.
 
 ## Uso
 ```sh
-uv run english-teacher                 # sesión de práctica
-uv run english-teacher --say-natural   # dice también la versión correcta en voz alta
+uv run english-teacher                   # menú para elegir la práctica
+uv run english-teacher conversation      # conversación libre
+uv run english-teacher phrasal-verbs     # práctica de phrasal verbs
+uv run english-teacher --say-natural     # dice también la versión correcta en voz alta
 uv run english-teacher -m qwen3:14b -w medium -s 0.9
 ```
 En la sesión: **Enter** para hablar y Enter para terminar, **escribe** una frase para enviarla como texto, **r** repite la última respuesta, **q** sale.
 Cada sesión se guarda en `sessions/` como Markdown.
+
+## Prácticas
+| Práctica | Cómo funciona |
+|---|---|
+| `conversation` | Charla libre. El tutor corrige cada frase (gramática y naturalidad) y sigue la conversación. |
+| `phrasal-verbs` | El tutor explica un phrasal verb en inglés con un ejemplo y tú creas una frase. Tienes 2 intentos; si fallas, te da un ejemplo y pasa al siguiente. Prioriza los verbos que no has visto o que más te cuestan (progreso en `progress/phrasal_verbs.json`, lista en `data/phrasal_verbs.txt`). |
+
+Para añadir una práctica nueva: crea una subclase de `Practice` en `src/english_teacher/practices.py`, su prompt en `prompts/` y regístrala en `PRACTICES`. Si la práctica tiene que evaluar algo (correcto / incorrecto), usa el modo evaluado como `PhrasalVerbs`: una llamada con salida JSON evalúa y otra genera lo que dice el tutor. Con modelos de ~12B es mucho más fiable que pedir las dos cosas en una sola respuesta.
 
 ## Scripts
 | Script | Para qué |

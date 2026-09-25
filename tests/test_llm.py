@@ -39,3 +39,10 @@ def test_parse_feedback_bold_fields():
     fb = parse_feedback("**CORRECTION:** I agree.\n**NATURAL:** OK\n**WHY:** x\n**REPLY:** Why?")
     assert (fb.correction, fb.natural, fb.reply) == ("I agree.", "OK", "Why?")
     assert fb.parsed
+
+
+def test_plain_text_mode_speaks_everything():
+    pieces = iter(["Give up means to ", "stop trying. For example, I gave up. ", "Your turn!"])
+    raw: list[str] = []
+    got = list(reply_sentences(pieces, raw, field=False))
+    assert got == ["Give up means to stop trying.", "For example, I gave up.", "Your turn!"]
