@@ -68,6 +68,8 @@ class Session:
         if opening := self.practice.opening():
             self.tutor_turn(opening)
         while not self.practice.finished:
+            if note := self.practice.announce():
+                print(f"  {BOLD}{YELLOW}{note}{RESET}")
             status = self.practice.status()
             tag = f"{CYAN}[{status}]{RESET} " if status else ""
             cmd = input(f"{tag}{BOLD}🎙  Enter para hablar › {RESET}").strip()
@@ -143,12 +145,20 @@ class Session:
             else:
                 print(f"{YELLOW}(el modelo no respetó el formato){RESET}\n{fb.raw}")
         else:
-            # Graded: show the feedback right away, then the tutor says what the practice asks for
+            # Graded: show the feedback right away, then the tutor says what the practice asks for:
+            # first any fixed text (plays immediately), then the model's reply if one is needed
             show_feedback(fb)
+            self.player.new_utterance()
             if self.args.say_natural:
                 self.say_natural(fb)
-            reply = self.speak(self.practice.reply_instruction(sentence, fb), fields=False)
-            fb.reply, fb.raw = reply.reply, reply.raw
+            quick = self.practice.quick_reply(sentence, fb) or ""
+            if quick:
+                self.player.say(quick, self.practice.voice)
+            fb.reply = fb.raw = quick
+            if instruction := self.practice.reply_instruction(sentence, fb):
+                reply = self.speak(instruction, fields=False, fresh=False)
+                fb.reply = f"{quick} {reply.reply}".strip()
+                fb.raw = reply.raw
         self.practice.after(fb)
         self.heard(fb.reply or fb.raw)
         print(f"{BOLD}{GREEN}🗣  {self.speaker_name}:{RESET} {fb.reply or fb.raw}\n")
@@ -165,13 +175,15 @@ class Session:
         self.log(None, fb, self.practice.status())
         self.player.wait()
 
-    def speak(self, message: str, fields: bool) -> Feedback:
+    def speak(self, message: str, fields: bool, fresh: bool = True) -> Feedback:
         """Send `message` to the tutor and speak its reply sentence by sentence while it is generated.
 
         fields=True: the answer has CORRECTION/NATURAL/WHY/REPLY and only REPLY is spoken.
         fields=False: the whole answer is plain spoken text.
+        fresh=False: continue the current utterance (for "repeat") instead of starting a new one.
         """
-        self.player.new_utterance()
+        if fresh:
+            self.player.new_utterance()
         raw: list[str] = []
         spoken = 0
         for s in reply_sentences(self.tutor.stream(message), raw, field=fields):

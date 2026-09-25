@@ -4,7 +4,7 @@ import pytest
 
 from english_teacher.levels import LEVELS, render
 from english_teacher.llm import Feedback
-from english_teacher.practices import PRACTICES, PhrasalVerbs, RolePlay, load_scenarios
+from english_teacher.practices import PRACTICES, PhrasalVerbs, RolePlay, Tenses, load_scenarios
 
 
 class FakeTutor:
@@ -103,7 +103,12 @@ def test_picks_are_not_always_alphabetical(practice):
 def test_all_prompts_fully_rendered_for_every_level():
     for level in LEVELS.values():
         for cls in PRACTICES.values():
-            practice = cls(level, load_scenarios()[0]) if cls is RolePlay else cls(level)
+            if cls is RolePlay:
+                practice = cls(level, load_scenarios()[0])
+            elif cls is Tenses:
+                practice = cls(level, diagnostic=False)
+            else:
+                practice = cls(level)
             prompt = practice.system_prompt()
             assert cls.title and cls.description and prompt
             assert "{{" not in prompt, (level.name, cls.key)

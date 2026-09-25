@@ -8,6 +8,7 @@ A practice works in one of two ways:
   Smaller models are much more reliable when grading and talking are separate tasks.
 
 Optional hooks: `setup` (interactive choices before the session), `intro` (fixed narrator text),
+`announce` (text shown on screen before each turn),
 `voice` (voice for the tutor's replies), `finished` (end the session), `help_context` (the "h"
 command) and `debrief` (review at the end).
 
@@ -16,6 +17,7 @@ To add a new practice: subclass Practice, write prompts/<prompt>.md and register
 
 import json
 import random
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -57,6 +59,10 @@ class Practice:
     def heard(self, text: str) -> None:
         """Called with everything the tutor says out loud."""
 
+    def announce(self) -> str | None:
+        """Text shown on screen (not spoken) before each student turn, e.g. a sentence to translate."""
+        return None
+
     def wrap(self, sentence: str) -> str:
         """Single-call practices: message actually sent to the tutor for the student's sentence."""
         return sentence
@@ -65,8 +71,12 @@ class Practice:
         """Graded practices: evaluate the sentence. None means this practice uses a single call."""
         return None
 
-    def reply_instruction(self, sentence: str, fb: Feedback | None) -> str:
-        """Graded practices: what the tutor must say (called before `after`).
+    def quick_reply(self, sentence: str, fb: Feedback) -> str | None:
+        """Graded practices: fixed text spoken right after grading, before (or instead of) the model's reply."""
+        return None
+
+    def reply_instruction(self, sentence: str, fb: Feedback | None) -> str | None:
+        """Graded practices: what the tutor must say (called before `after`). None: nothing more to say.
 
         fb is None when `grade_after_reply` is set, since grading happens after the reply.
         """
@@ -123,6 +133,36 @@ class Conversation(Practice):
         return f"A casual conversation with an English tutor. The tutor just said: {last_line}"
 
 
+class Progress:
+    """Per-item success history saved as JSON; picks what to practice next."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.data: dict[str, dict] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def pick(self, items: list[str], exclude: set[str] = frozenset(), top: int = 5) -> str:
+        """Prefer items never practiced, then the ones with the lowest success rate, oldest first."""
+
+        def score(item: str) -> tuple:
+            p = self.data.get(item)
+            if not p:
+                return (0, 0.0, "")
+            return (1, p["correct"] / p["attempts"], p["last"])
+
+        candidates = [i for i in items if i not in exclude] or list(items)
+        random.shuffle(candidates)  # sort is stable: shuffle first so ties (e.g. all unseen) come out random
+        candidates.sort(key=score)
+        return random.choice(candidates[:top])  # a bit of variety among the top candidates
+
+    def record(self, item: str, correct: bool) -> None:
+        p = self.data.setdefault(item, {"attempts": 0, "correct": 0, "last": ""})
+        p["attempts"] += 1
+        p["correct"] += int(correct)
+        p["last"] = datetime.now().isoformat(timespec="seconds")
+        self.path.parent.mkdir(exist_ok=True)
+        self.path.write_text(json.dumps(self.data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 class PhrasalVerbs(Practice):
     key = "phrasal-verbs"
     title = "Phrasal verbs"
@@ -140,10 +180,7 @@ class PhrasalVerbs(Practice):
         paths = verbs_paths or [ROOT / "data" / name for name in level.phrasal_lists]
         lines = [line for path in paths for line in path.read_text(encoding="utf-8").splitlines()]
         self.verbs = list(dict.fromkeys(v.strip() for v in lines if v.strip() and not v.startswith("#")))
-        self.progress_path = progress_path
-        self.progress: dict[str, dict] = (
-            json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.exists() else {}
-        )
+        self.progress = Progress(progress_path)
         self.current = self._pick(exclude=set())
         self.next = self._pick(exclude={self.current})
         self.attempt = 1
@@ -207,7 +244,7 @@ class PhrasalVerbs(Practice):
 
     def after(self, fb: Feedback) -> None:
         correct = fb.result == "CORRECT"
-        self._record(self.current, correct)
+        self.progress.record(self.current, correct)
         self.advanced = correct or self.attempt >= self.max_attempts
         if self.advanced:
             # The tutor has already introduced self.next in its reply
@@ -228,26 +265,7 @@ class PhrasalVerbs(Practice):
         return text
 
     def _pick(self, exclude: set[str]) -> str:
-        """Prefer verbs never practiced, then the ones with the lowest success rate, oldest first."""
-
-        def score(verb: str) -> tuple:
-            p = self.progress.get(verb)
-            if not p:
-                return (0, 0.0, "")
-            return (1, p["correct"] / p["attempts"], p["last"])
-
-        candidates = [v for v in self.verbs if v not in exclude]
-        random.shuffle(candidates)  # sort is stable: shuffle first so ties (e.g. all unseen) come out random
-        candidates.sort(key=score)
-        return random.choice(candidates[:5])  # a bit of variety among the top candidates
-
-    def _record(self, verb: str, correct: bool) -> None:
-        p = self.progress.setdefault(verb, {"attempts": 0, "correct": 0, "last": ""})
-        p["attempts"] += 1
-        p["correct"] += int(correct)
-        p["last"] = datetime.now().isoformat(timespec="seconds")
-        self.progress_path.parent.mkdir(exist_ok=True)
-        self.progress_path.write_text(json.dumps(self.progress, indent=2, ensure_ascii=False), encoding="utf-8")
+        return self.progress.pick(self.verbs, exclude)
 
 
 @dataclass
@@ -425,6 +443,210 @@ class RolePlay(Practice):
         return Debrief(spoken=str(d.get("spoken", "")).strip(), lines=lines)
 
 
+@dataclass
+class Structure:
+    key: str
+    name: str  # English, for the tutor and grader
+    name_es: str  # Spanish, for the screen
+    level: str
+    hint: str  # what kind of question makes the structure necessary
+    translations: list[dict]  # {"es": ..., "en": ...}
+
+
+def _spoken(name: str) -> str:
+    """Structure name as the voice should say it: "wish / if only (x)" -> "wish or if only"."""
+    return re.sub(r"\s*\(.*?\)", "", name).replace(" / ", " or ")
+
+
+def _is_ok(value: str) -> bool:
+    return value.strip().strip(".").upper() in ("", "OK")
+
+
+def load_structures(path: Path = ROOT / "data" / "tenses.yaml") -> list[Structure]:
+    return [Structure(**item) for item in yaml.safe_load(path.read_text(encoding="utf-8"))]
+
+
+@dataclass
+class TenseItem:
+    structure: Structure
+    mode: str  # "question" (answer freely) or "translation" (from Spanish)
+    es: str = ""
+    en: str = ""
+
+
+class Tenses(Practice):
+    key = "tenses"
+    title = "Tiempos verbales"
+    description = "Respondes preguntas y traduces frases del español que obligan a usar tiempos complejos."
+    prompt = "tenses"
+    max_attempts = 2
+
+    def __init__(
+        self,
+        level: Level = LEVELS["B2"],
+        structures: list[Structure] | None = None,
+        progress_path: Path = ROOT / "progress" / "tenses.json",
+        diagnostic: bool | None = None,  # None: ask in setup()
+    ):
+        super().__init__(level)
+        allowed = {"B1"} if level.name == "B1" else {"B1", "B2", "C1"}
+        self.structures = [st for st in (structures or load_structures()) if st.level in allowed]
+        self.by_key = {st.key: st for st in self.structures}
+        self.progress = Progress(progress_path)
+        self.diagnostic = diagnostic
+        self.queue: list[TenseItem] = []  # diagnostic: one item per structure
+        self.used: set[str] = set()  # translations already asked in this session
+        self._next_mode = random.choice(["question", "translation"])
+        self.attempt = 1
+        self.last_line = ""  # the tutor's last question, for grading
+        self._quick = ""  # fixed reply already spoken this turn
+        self.done: list[tuple[Structure, bool]] = []
+        if diagnostic is not None:
+            self._start()
+
+    def setup(self, model: str) -> None:
+        if self.diagnostic is not None:
+            return
+        if not self.progress.data:
+            print(f"\nEs tu primera vez con los tiempos verbales. El diagnóstico prueba una frase de cada "
+                  f"estructura ({len(self.structures)}) para saber por dónde empezar.")
+            self.diagnostic = input("¿Empezamos con el diagnóstico? [S/n] › ").strip().lower() not in ("n", "no")
+        else:
+            print("\n  1. Práctica (prioriza lo que más te cuesta)\n  2. Diagnóstico (una frase de cada estructura)")
+            self.diagnostic = input("› ").strip() == "2"
+        self._start()
+
+    def _start(self) -> None:
+        if self.diagnostic:
+            order = random.sample(self.structures, len(self.structures))
+            self.queue = [self._item(st) for st in order]
+            self.current = self.queue.pop(0)
+            self.next = self.queue[0] if self.queue else None
+        else:
+            self.current = self._item()
+            self.next = self._item(exclude={self.current.structure.key})
+
+    def _item(self, structure: Structure | None = None, exclude: set[str] = frozenset()) -> TenseItem:
+        """Next exercise: the weakest structures first, alternating questions and translations."""
+        st = structure or self.by_key[self.progress.pick(list(self.by_key), set(exclude))]
+        mode, self._next_mode = self._next_mode, "question" if self._next_mode == "translation" else "translation"
+        options = [t for t in st.translations if t["es"] not in self.used]
+        if mode == "translation" and options:
+            pick = random.choice(options)
+            self.used.add(pick["es"])
+            return TenseItem(st, "translation", es=pick["es"], en=pick["en"])
+        return TenseItem(st, "question")
+
+    # --- what the tutor says ------------------------------------------------
+    # Everything except new questions is fixed text: it plays right after grading, and the model
+    # can't drift from what the screen shows (e.g. make up a different sentence to translate).
+
+    TRANSLATE = "Now, translate the sentence on your screen into English."
+
+    def intro(self) -> str:
+        start = ("Let's do a quick check of a few tenses, to see what to practice." if self.diagnostic
+                 else "Let's practice tenses.")
+        return f"{start} {self.TRANSLATE}" if self.current.mode == "translation" else start
+
+    def opening(self) -> str | None:
+        return None if self.current.mode == "translation" else f"[{self._ask(self.current)}]"
+
+    def _ask(self, item: TenseItem) -> str:
+        return (
+            f"Ask the student one question that needs the {item.structure.name} in the answer. "
+            f"{item.structure.hint} Use the {item.structure.name} in your question too, so the natural answer "
+            f"uses it. Ask only the question, in 1-2 sentences, different from any question you asked before."
+        )
+
+    def announce(self) -> str | None:
+        if self.current and self.current.mode == "translation":
+            return f"🇪🇸 Traduce: {self.current.es}"
+        return None
+
+    def status(self) -> str:
+        name = self.current.structure.name_es
+        if self.diagnostic:
+            total = len(self.structures)
+            return f"Diagnóstico {total - len(self.queue)}/{total} · {name}"
+        return f"{name} · intento {self.attempt}/{self.max_attempts}"
+
+    # --- turns ----------------------------------------------------------------
+
+    def grade(self, tutor: Tutor, sentence: str) -> Feedback:
+        item = self.current
+        if item.mode == "translation":
+            content = f"Target: {item.structure.name} | Spanish: {item.es} | Reference: {item.en} | Student: {sentence}"
+        else:
+            content = f"Target: {item.structure.name} | Question: {self.last_line} | Student: {sentence}"
+        d = tutor.structured(render(load_prompt("tenses_grader"), self.level), content, TENSES_GRADER_SCHEMA)
+        correct = bool(d.get("target_ok")) and (item.mode == "question" or bool(d.get("meaning_ok")))
+        return Feedback(
+            correction=str(d.get("correction", "")).strip(),
+            natural=str(d.get("natural", "")).strip(),
+            why=str(d.get("why_es", "")).strip(),
+            result="CORRECT" if correct else "RETRY",
+            verb_words=str(d.get("verb_words", "")).strip(),
+        )
+
+    def heard(self, text: str) -> None:
+        self.last_line = text
+
+    def quick_reply(self, sentence: str, fb: Feedback) -> str:
+        item, nxt = self.current, self.next
+        name = _spoken(item.structure.name)
+        if not self.diagnostic and fb.result != "CORRECT" and self.attempt < self.max_attempts:
+            again = "translate it again" if item.mode == "translation" else "answer again"
+            self._quick = f"Not quite. You need the {name} here. Try to {again}."
+            return self._quick
+        if self.diagnostic:
+            parts = ["Okay, thanks."]
+        elif fb.result == "CORRECT":
+            parts = [random.choice(["Great!", "Well done!", "Exactly!", "Nice one!"])]
+        else:
+            answer = item.en if item.mode == "translation" else (fb.natural if not _is_ok(fb.natural) else fb.correction)
+            parts = [f"Not quite. A correct version would be: {answer}" if not _is_ok(answer) else "Not quite."]
+        if nxt is None:
+            parts.append("That's the end of the check. Thank you!")
+        elif nxt.mode == "translation":
+            parts.append(self.TRANSLATE)
+        self._quick = " ".join(parts)
+        return self._quick
+
+    def reply_instruction(self, sentence: str, fb: Feedback | None) -> str | None:
+        """Only needed when the next exercise is a new question (called after quick_reply)."""
+        staying = not self.diagnostic and fb.result != "CORRECT" and self.attempt < self.max_attempts
+        if staying or self.next is None or self.next.mode == "translation":
+            return None
+        return f'[You have just said: "{self._quick}". Do not repeat it. {self._ask(self.next)}]'
+
+    def after(self, fb: Feedback) -> None:
+        correct = fb.result == "CORRECT"
+        self.progress.record(self.current.structure.key, correct)
+        if correct or self.diagnostic or self.attempt >= self.max_attempts:
+            self.done.append((self.current.structure, correct))
+            self.attempt = 1
+            if self.diagnostic:
+                self.current = self.queue.pop(0) if self.queue else None
+                self.next = self.queue[0] if self.queue else None
+                self.finished = self.current is None
+            else:
+                self.current = self.next
+                self.next = self._item(exclude={self.current.structure.key})
+        else:
+            self.attempt += 1
+
+    def summary(self) -> str | None:
+        if not self.done:
+            return None
+        right = sum(ok for _, ok in self.done)
+        missed = list(dict.fromkeys(st.name_es for st, ok in self.done if not ok))
+        head = "Diagnóstico" if self.diagnostic else "Tiempos practicados"
+        text = f"{head}: {right}/{len(self.done)} bien"
+        if missed:
+            text += f" · a repasar: {', '.join(missed)}"
+        return text
+
+
 # Three separate fields: with an array, Gemma sometimes returns a single long suggestion
 HELP_SCHEMA = {
     "type": "object",
@@ -467,6 +689,19 @@ DEBRIEF_SCHEMA = {
     "required": ["spoken", "mistakes", "phrases"],
 }
 
+TENSES_GRADER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verb_words": {"type": "string"},
+        "target_ok": {"type": "boolean"},
+        "meaning_ok": {"type": "boolean"},
+        "correction": {"type": "string"},
+        "natural": {"type": "string"},
+        "why_es": {"type": "string"},
+    },
+    "required": ["verb_words", "target_ok", "meaning_ok", "correction", "natural", "why_es"],
+}
+
 INVENT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -495,4 +730,4 @@ GRADER_SCHEMA = {
     "required": ["verb_words", "meaning_ok", "natural_use", "correction", "natural", "why"],
 }
 
-PRACTICES: dict[str, type[Practice]] = {p.key: p for p in (Conversation, PhrasalVerbs, RolePlay)}
+PRACTICES: dict[str, type[Practice]] = {p.key: p for p in (Conversation, PhrasalVerbs, Tenses, RolePlay)}

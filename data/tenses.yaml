@@ -1,0 +1,174 @@
+# Tense structures for the "tenses" practice.
+# level: lowest level that practices it (B1 levels only get B1 structures; B2 and C1 get all).
+# hint: what kind of question makes the structure necessary (the tutor asks it).
+# translations: Spanish sentences that tend to go wrong when translated literally, with one correct answer
+#   (other correct answers are accepted).
+
+- key: present_perfect_vs_past
+  name: present perfect (vs past simple)
+  name_es: Present perfect vs pasado simple
+  level: B1
+  hint: Ask about life experiences or recent changes, where the present perfect is needed (ever, never, yet, already, so far, this year).
+  translations:
+    - es: Nunca he estado en Japón.
+      en: I've never been to Japan.
+    - es: ¿Ya has terminado el informe?
+      en: Have you finished the report yet?
+    - es: Este año he leído cinco libros.
+      en: I've read five books this year.
+
+- key: present_perfect_continuous
+  name: present perfect continuous (for / since)
+  name_es: Present perfect continuous (for / since)
+  level: B1
+  hint: Ask how long the student has been doing something that is still going on.
+  translations:
+    - es: Llevo tres años viviendo aquí.
+      en: I've been living here for three years.
+    - es: Estoy esperando el autobús desde las ocho.
+      en: I've been waiting for the bus since eight.
+    - es: ¿Cuánto tiempo llevas estudiando inglés?
+      en: How long have you been studying English?
+
+- key: used_to_would
+  name: used to / would for past habits
+  name_es: Used to / would (hábitos del pasado)
+  level: B1
+  hint: Ask about habits or situations in the student's past that are no longer true.
+  translations:
+    - es: Antes vivía en el campo.
+      en: I used to live in the countryside.
+    - es: En mi infancia, mi abuelo me contaba historias todas las noches.
+      en: In my childhood, my grandfather would tell me stories every night.
+    - es: Antes no me gustaba el café.
+      en: I didn't use to like coffee.
+
+- key: second_conditional
+  name: second conditional
+  name_es: Segundo condicional
+  level: B1
+  hint: Ask a hypothetical question about an imaginary present or future situation (what would you do if...).
+  translations:
+    - es: Si tuviera más tiempo, aprendería a tocar la guitarra.
+      en: If I had more time, I would learn to play the guitar.
+    - es: ¿Qué harías si ganaras la lotería?
+      en: What would you do if you won the lottery?
+    - es: Si yo fuera tú, no aceptaría esa oferta.
+      en: If I were you, I wouldn't accept that offer.
+
+- key: past_perfect
+  name: past perfect
+  name_es: Past perfect
+  level: B2
+  hint: Ask the student to tell what had already happened before another past event (by the time, when I arrived, already, never... before).
+  translations:
+    - es: Cuando llegué, la película ya había empezado.
+      en: When I arrived, the film had already started.
+    - es: Nunca había visto el mar hasta que cumplí veinte años.
+      en: I had never seen the sea until I turned twenty.
+    - es: Me di cuenta de que había dejado las llaves en casa.
+      en: I realized I had left my keys at home.
+
+- key: past_perfect_continuous
+  name: past perfect continuous
+  name_es: Past perfect continuous
+  level: B2
+  hint: Ask how long something had been happening before a moment in the past.
+  translations:
+    - es: Llevaba dos horas esperando cuando por fin llegó el autobús.
+      en: I had been waiting for two hours when the bus finally arrived.
+    - es: Tenía sueño porque había estado trabajando toda la noche.
+      en: I was sleepy because I had been working all night.
+    - es: ¿Cuánto tiempo llevabas viviendo allí cuando te mudaste?
+      en: How long had you been living there when you moved?
+
+- key: future_continuous
+  name: future continuous
+  name_es: Future continuous
+  level: B2
+  hint: Ask what the student will be doing at a specific moment in the future (this time tomorrow, at 8 pm tonight, next month).
+  translations:
+    - es: Mañana a esta hora estaré volando a Madrid.
+      en: This time tomorrow I'll be flying to Madrid.
+    - es: No me llames a las nueve, estaré cenando.
+      en: Don't call me at nine, I'll be having dinner.
+    - es: A las diez de la noche todavía estaré trabajando.
+      en: At ten p.m. I'll still be working.
+
+- key: future_perfect
+  name: future perfect
+  name_es: Future perfect
+  level: B2
+  hint: Ask what the student will have done or achieved by a specific time in the future (by next year, by the time you retire).
+  translations:
+    - es: Para el viernes ya habré terminado el proyecto.
+      en: I'll have finished the project by Friday.
+    - es: En junio habremos vivido aquí diez años.
+      en: By June we'll have lived here for ten years.
+    - es: Cuando llegues, ya habré preparado la cena.
+      en: By the time you arrive, I'll have made dinner.
+
+- key: third_conditional
+  name: third conditional
+  name_es: Tercer condicional
+  level: B2
+  hint: Ask about an imaginary past, what would have happened if something had been different.
+  translations:
+    - es: Si hubiera estudiado más, habría aprobado el examen.
+      en: If I had studied more, I would have passed the exam.
+    - es: ¿Qué habrías hecho si hubieras perdido el vuelo?
+      en: What would you have done if you had missed the flight?
+    - es: Si no me hubieras avisado, me habría olvidado.
+      en: If you hadn't reminded me, I would have forgotten.
+
+- key: mixed_conditional
+  name: mixed conditional (past condition, present result)
+  name_es: Condicional mixto
+  level: B2
+  hint: Ask how a different decision in the past would change the student's life now (if you had..., would you now...).
+  translations:
+    - es: Si hubiera aceptado ese trabajo, ahora viviría en Londres.
+      en: If I had accepted that job, I would be living in London now.
+    - es: Si no hubiera aprendido inglés, ahora no tendría este trabajo.
+      en: If I hadn't learned English, I wouldn't have this job now.
+    - es: Si tuviera mejor memoria, no habría olvidado el cumpleaños de mi madre.
+      en: If I had a better memory, I wouldn't have forgotten my mother's birthday.
+
+- key: wish_if_only
+  name: wish / if only
+  name_es: Wish / if only
+  level: B2
+  hint: Ask about regrets or things the student would like to be different now or in the past.
+  translations:
+    - es: Ojalá hubiera aceptado ese trabajo.
+      en: I wish I had accepted that job.
+    - es: Ojalá tuviera más tiempo libre.
+      en: I wish I had more free time.
+    - es: Ojalá dejaras de interrumpirme.
+      en: I wish you would stop interrupting me.
+
+- key: modal_perfect
+  name: modal perfect (should have, must have, might have, could have)
+  name_es: Modales en perfecto (should / must / might / could have)
+  level: B2
+  hint: Ask about a past situation so the student has to express regret, criticism or a deduction about the past.
+  translations:
+    - es: Deberías haberme llamado.
+      en: You should have called me.
+    - es: Él debe de haberse quedado dormido.
+      en: He must have fallen asleep.
+    - es: Podría haber sido peor.
+      en: It could have been worse.
+
+- key: reported_speech
+  name: reported speech (with tense backshift)
+  name_es: Estilo indirecto
+  level: B2
+  hint: Ask the student to report something someone told them or asked them recently (he said that..., she asked me if...).
+  translations:
+    - es: Ella me dijo que estaba cansada.
+      en: She told me she was tired.
+    - es: Él me preguntó si había terminado el informe.
+      en: He asked me if I had finished the report.
+    - es: Dijeron que llegarían tarde.
+      en: They said they would be late.
