@@ -8,10 +8,13 @@ authors = [
 ]
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "en-core-web-sm",
     "faster-whisper>=1.2.1",
+    "kokoro>=0.9.4",
     "numpy>=2.5.3",
     "ollama>=0.6.2",
     "sounddevice>=0.5.6",
+    "torch>=2.14.0",
 ]
 
 [build-system]
@@ -20,3 +23,13 @@ build-backend = "uv_build"
 
 [project.scripts]
 english-teacher = "english_teacher.main:main"
+
+# Kokoro runs on CPU; avoid pulling the multi-GB CUDA build of torch.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
