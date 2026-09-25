@@ -33,3 +33,8 @@ en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/dow
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

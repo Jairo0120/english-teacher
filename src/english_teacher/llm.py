@@ -1,6 +1,7 @@
 """Tutor LLM via Ollama: sends the student's sentence and parses the structured feedback."""
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,29 +40,91 @@ def parse_feedback(text: str) -> Feedback:
     return fb
 
 
+_SENTENCE_END = re.compile(r"[.!?]+[\"')]*\s+")
+
+
+def reply_sentences(pieces: Iterator[str], out: list[str]) -> Iterator[str]:
+    """Consume streamed model output and yield REPLY sentences as soon as each one is complete.
+
+    The whole raw text is accumulated into `out[0]` so the caller can parse the feedback afterwards.
+    """
+    text, sent = "", 0  # sent: offset inside the reply already yielded
+    out[:] = [""]
+    for piece in pieces:
+        text += piece
+        out[0] = text
+        reply = _reply_part(text)
+        if reply is None:
+            continue
+        while m := _SENTENCE_END.search(reply, sent):
+            yield reply[sent:m.end()].strip()
+            sent = m.end()
+    reply = _reply_part(text)
+    if reply is not None and reply[sent:].strip():
+        yield reply[sent:].strip()
+
+
+def _reply_part(text: str) -> str | None:
+    marker = next((m for m in _FIELD_RE.finditer(text) if m.group(1) == "REPLY"), None)
+    return text[marker.end():] if marker else None
+
+
 class Tutor:
-    def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None, keep_history: bool = True):
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        host: str | None = None,
+        keep_history: bool = True,
+        max_turns: int = 10,
+        keep_alive: str = "30m",
+    ):
         self.model = model
         self.client = ollama.Client(host=host)
         self.keep_history = keep_history
-        self.messages: list[dict] = [{"role": "system", "content": load_system_prompt()}]
+        self.max_turns = max_turns
+        self.keep_alive = keep_alive  # keep the model in VRAM while the student thinks
+        self.system = {"role": "system", "content": load_system_prompt()}
+        self.history: list[dict] = []
         self._think: bool | None = False
 
     def ask(self, sentence: str) -> Feedback:
-        messages = [*self.messages, {"role": "user", "content": sentence}]
-        text = self._chat(messages)
-        if self.keep_history:
-            self.messages = [*messages, {"role": "assistant", "content": text}]
-        return parse_feedback(text)
+        return parse_feedback("".join(self.stream(sentence)))
 
-    def _chat(self, messages: list[dict]) -> str:
+    def stream(self, sentence: str) -> Iterator[str]:
+        """Yield the model output piece by piece and record the turn in the history."""
+        user = {"role": "user", "content": sentence}
+        parts = []
+        for piece in self._chat([self.system, *self.history, user]):
+            parts.append(piece)
+            yield piece
+        if self.keep_history:
+            # Only the last max_turns exchanges, so the context (and latency) doesn't grow forever
+            self.history = [*self.history, user, {"role": "assistant", "content": "".join(parts)}]
+            self.history = self.history[-2 * self.max_turns:]
+
+    def warm_up(self) -> None:
+        """Load the model into VRAM so the first real answer is fast."""
+        self.client.generate(model=self.model, prompt="", keep_alive=self.keep_alive)
+
+    def _chat(self, messages: list[dict]) -> Iterator[str]:
         # Disable thinking so voice replies start fast; models without a
         # thinking mode (e.g. gemma3) reject the flag, so drop it for them.
+        # With stream=True the error only shows up when reading the first chunk.
         try:
-            resp = self.client.chat(model=self.model, messages=messages, think=self._think)
+            first, chunks = self._open_stream(messages)
         except ollama.ResponseError as e:
             if self._think is None or "think" not in str(e).lower():
                 raise
             self._think = None
-            resp = self.client.chat(model=self.model, messages=messages)
-        return resp.message.content or ""
+            first, chunks = self._open_stream(messages)
+        yield first
+        for chunk in chunks:
+            yield chunk.message.content or ""
+
+    def _open_stream(self, messages: list[dict]) -> tuple[str, Iterator]:
+        kwargs = {"think": self._think} if self._think is not None else {}
+        chunks = self.client.chat(
+            model=self.model, messages=messages, stream=True, keep_alive=self.keep_alive, **kwargs
+        )
+        first = next(chunks, None)
+        return (first.message.content or "") if first else "", chunks

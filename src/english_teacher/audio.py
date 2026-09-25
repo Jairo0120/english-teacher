@@ -11,12 +11,17 @@ SAMPLE_RATE = 16_000  # what Whisper expects
 
 def record_push_to_talk(device: int | str | None = None, samplerate: int = SAMPLE_RATE) -> np.ndarray:
     """Record mono float32 audio between two Enter presses."""
+    input("🎙  Enter para hablar...")
+    return record_until_enter(device, samplerate)
+
+
+def record_until_enter(device: int | str | None = None, samplerate: int = SAMPLE_RATE) -> np.ndarray:
+    """Start recording right away and stop on Enter."""
     chunks: list[np.ndarray] = []
 
     def callback(indata, frames, time, status):
         chunks.append(indata[:, 0].copy())
 
-    input("🎙  Enter para hablar...")
     with sd.InputStream(samplerate=samplerate, channels=1, dtype="float32", device=device, callback=callback):
         input("🔴 Grabando... Enter para terminar")
     return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
