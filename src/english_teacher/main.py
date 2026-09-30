@@ -1,19 +1,26 @@
-"""Conversation loop: record -> transcribe -> tutor -> speak."""
+"""Conversation loop: record -> transcribe -> tutor -> speak.
+
+Whisper, Kokoro and audio are imported only when a voice session starts: they take ~5 s to import
+and the text-only writing review doesn't need them.
+"""
+
+from __future__ import annotations
 
 import argparse
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from english_teacher import settings
-from english_teacher.audio import SAMPLE_RATE, record_until_enter
-from english_teacher.fluency import Fluency, FluencyLog, measure
+from english_teacher import settings, writing
 from english_teacher.levels import DEFAULT_LEVEL, LEVELS
 from english_teacher.llm import DEFAULT_MODEL, Feedback, Tutor, parse_feedback, reply_sentences
 from english_teacher.practices import PRACTICES, Practice
-from english_teacher.speech import SpeechPlayer
-from english_teacher.stt import DEFAULT_STT_MODEL, Transcriber
-from english_teacher.tts import DEFAULT_VOICE, Speaker
+
+if TYPE_CHECKING:
+    from english_teacher.fluency import Fluency
+
+WRITING = "writing"
 
 ROOT = Path(__file__).resolve().parents[2]
 HELP = "Enter = hablar · escribe una frase = enviarla como texto · h = ayuda · r = repetir · q = salir"
@@ -41,6 +48,13 @@ def show_feedback(fb: Feedback) -> None:
 
 class Session:
     def __init__(self, args: argparse.Namespace, practice: Practice):
+        from english_teacher.fluency import FluencyLog
+        from english_teacher.speech import SpeechPlayer
+        from english_teacher.stt import DEFAULT_STT_MODEL, Transcriber
+        from english_teacher.tts import DEFAULT_VOICE, Speaker
+
+        args.stt_model = args.stt_model or DEFAULT_STT_MODEL
+        args.voice = args.voice or DEFAULT_VOICE
         self.args = args
         self.practice = practice
         self.fluency = FluencyLog(practice.key, practice.level.name)
@@ -97,6 +111,9 @@ class Session:
                 self.respond(sentence, fluency)
 
     def listen(self) -> tuple[str, Fluency | None]:
+        from english_teacher.audio import SAMPLE_RATE, record_until_enter
+        from english_teacher.fluency import measure
+
         audio = record_until_enter(self.args.input)
         if len(audio) < 0.3 * SAMPLE_RATE:
             print(f"{DIM}(grabación demasiado corta){RESET}")
@@ -144,6 +161,8 @@ class Session:
         print()
 
     def debrief(self) -> None:
+        if type(self.practice).debrief is Practice.debrief:  # this practice has no review
+            return
         print(f"{DIM}Preparando el repaso...{RESET}")
         review = self.practice.debrief(self.tutor)
         if not review:
@@ -278,15 +297,17 @@ class Session:
 
 
 def choose_practice() -> str:
-    practices = list(PRACTICES.values())
+    options = [(p.key, p.title, p.description) for p in PRACTICES.values()]
+    options.append((WRITING, "Revisión de textos", "Solo texto: corrige la gramática y luego la naturalidad de un texto tuyo."))
     print(f"{BOLD}¿Qué quieres practicar?{RESET}")
-    for i, p in enumerate(practices, 1):
-        print(f"  {i}. {p.title} {DIM}— {p.description}{RESET}")
+    for i, (_, title, description) in enumerate(options, 1):
+        print(f"  {i}. {title} {DIM}— {description}{RESET}")
+    keys = [key for key, _, _ in options]
     while True:
         choice = input("› ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(practices):
-            return practices[int(choice) - 1].key
-        if choice in PRACTICES:
+        if choice.isdigit() and 1 <= int(choice) <= len(options):
+            return keys[int(choice) - 1]
+        if choice in keys:
             return choice
 
 
@@ -296,10 +317,12 @@ def device_arg(value: str) -> int | str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tutor de inglés local por voz.")
-    parser.add_argument("practice", nargs="?", choices=PRACTICES, help="tipo de práctica (si no, muestra un menú)")
-    parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"modelo de Ollama (por defecto {DEFAULT_MODEL})")
-    parser.add_argument("-w", "--stt-model", default=DEFAULT_STT_MODEL, help="tamaño de Whisper")
-    parser.add_argument("-v", "--voice", default=DEFAULT_VOICE, help="voz de Kokoro")
+    parser.add_argument("practice", nargs="?", choices=[*PRACTICES, WRITING], help="tipo de práctica (si no, muestra un menú)")
+    parser.add_argument("-m", "--model", help=f"modelo de Ollama (por defecto {DEFAULT_MODEL}; "
+                                              f"{writing.DEFAULT_WRITING_MODEL} en writing)")
+    parser.add_argument("-f", "--file", type=Path, help="writing: archivo con el texto (si no, lo pegas)")
+    parser.add_argument("-w", "--stt-model", help="tamaño de Whisper (por defecto small)")
+    parser.add_argument("-v", "--voice", help="voz de Kokoro (por defecto af_heart)")
     parser.add_argument("-s", "--speed", type=float, help="velocidad de la voz (por defecto, la del nivel)")
     parser.add_argument("-l", "--level", choices=LEVELS, help="nivel (se guarda como predeterminado)")
     parser.add_argument("-i", "--input", type=device_arg, help="dispositivo de entrada")
@@ -313,7 +336,16 @@ def main() -> None:
     if args.speed is None:
         args.speed = level.speed
 
-    practice = PRACTICES[args.practice or choose_practice()](level)
+    choice = args.practice or choose_practice()
+    if choice == WRITING:
+        try:
+            writing.run(args.model or writing.DEFAULT_WRITING_MODEL, level, args.file)
+        except (KeyboardInterrupt, EOFError):
+            print()
+        return
+
+    args.model = args.model or DEFAULT_MODEL
+    practice = PRACTICES[choice](level)
     practice.setup(args.model)
     session = Session(args, practice)
     try:
