@@ -1,0 +1,77 @@
+# Seed exercises for the "conditionals" practice. The model can also generate variations of the translations.
+# type: 1 real/possible (zero, first) · 2 hypothetical present/future (second) · 3 unreal past (third)
+#       4 mixed (unreal past, present result)
+# level: lowest level that gets the item (B1 items for everyone, B2 for B2 and C1, C1 only for C1).
+# The answers are references: any equivalent translation with the right conditional structure is accepted.
+
+translations:
+  # Type 1
+  - {type: 1, level: B1, es: "Si llueve, me quedo en casa.", en: "If it rains, I'll stay at home."}
+  - {type: 1, level: B1, es: "Si calientas el hielo, se derrite.", en: "If you heat ice, it melts."}
+  - {type: 1, level: B1, es: "Si terminas pronto, podemos ir al cine.", en: "If you finish early, we can go to the cinema."}
+  - {type: 1, level: B1, es: "Si no te das prisa, perderás el tren.", en: "If you don't hurry, you'll miss the train."}
+  - {type: 1, level: B1, es: "Te llamaré si tengo tiempo.", en: "I'll call you if I have time."}
+  - {type: 1, level: B2, es: "Si mañana hace sol, iremos a la playa.", en: "If it's sunny tomorrow, we'll go to the beach."}
+  # Type 2
+  - {type: 2, level: B1, es: "Si tuviera más dinero, viajaría por todo el mundo.", en: "If I had more money, I would travel around the world."}
+  - {type: 2, level: B1, es: "Si yo fuera tú, hablaría con tu jefe.", en: "If I were you, I would talk to your boss."}
+  - {type: 2, level: B1, es: "Si viviera cerca del mar, iría a nadar todos los días.", en: "If I lived near the sea, I would go swimming every day."}
+  - {type: 2, level: B2, es: "Si supiera hablar alemán, podría trabajar en Berlín.", en: "If I could speak German, I could work in Berlin."}
+  - {type: 2, level: B2, es: "Si no tuviera tanto sueño, iría a la fiesta.", en: "If I weren't so sleepy, I would go to the party."}
+  - {type: 2, level: B2, es: "Si nos diéramos prisa, quizás llegaríamos a tiempo.", en: "If we hurried, we might arrive on time."}
+  # Type 3
+  - {type: 3, level: B1, es: "Si lo hubiera sabido, te lo habría dicho.", en: "If I had known, I would have told you."}
+  - {type: 3, level: B1, es: "Si hubiéramos salido antes, no habríamos perdido el vuelo.", en: "If we had left earlier, we wouldn't have missed the flight."}
+  - {type: 3, level: B1, es: "Si hubieras estudiado más, habrías aprobado.", en: "If you had studied more, you would have passed."}
+  - {type: 3, level: B2, es: "Si no hubiera llovido, habríamos ido de excursión.", en: "If it hadn't rained, we would have gone hiking."}
+  - {type: 3, level: B2, es: "Si me hubieras llamado, habría venido a ayudarte.", en: "If you had called me, I would have come to help you."}
+  - {type: 3, level: B2, es: "Si hubiera visto la señal, no habría tomado esa salida.", en: "If I had seen the sign, I wouldn't have taken that exit."}
+  # Type 4
+  - {type: 4, level: B2, es: "Si hubiera tomado decisiones diferentes, ahora todo sería diferente.", en: "If I had made different choices, everything would be different now."}
+  - {type: 4, level: B2, es: "Si hubiera aceptado ese trabajo, ahora viviría en Londres.", en: "If I had accepted that job, I would live in London now."}
+  - {type: 4, level: B2, es: "Si no hubiera aprendido inglés, ahora no tendría este trabajo.", en: "If I hadn't learned English, I wouldn't have this job now."}
+  - {type: 4, level: B2, es: "Si hubieras dormido más anoche, ahora no tendrías sueño.", en: "If you had slept more last night, you wouldn't be sleepy now."}
+  - {type: 4, level: B2, es: "Si no hubiéramos perdido el mapa, ya estaríamos en el hotel.", en: "If we hadn't lost the map, we would already be at the hotel."}
+  - {type: 4, level: B2, es: "Si tuviera mejor memoria, no habría olvidado tu cumpleaños.", en: "If I had a better memory, I wouldn't have forgotten your birthday."}
+  # C1: inversion, unless, provided that, otherwise
+  - {type: 3, level: C1, es: "De haberlo sabido, te lo habría dicho.", en: "Had I known, I would have told you."}
+  - {type: 3, level: C1, es: "De no haber sido por tu ayuda, no lo habría conseguido.", en: "Had it not been for your help, I wouldn't have managed it."}
+  - {type: 2, level: C1, es: "Yo que tú, no firmaría ese contrato.", en: "Were I you, I wouldn't sign that contract."}
+  - {type: 2, level: C1, es: "De no ser por el GPS, ahora estaríamos perdidos.", en: "Were it not for the GPS, we would be lost now."}
+  - {type: 1, level: C1, es: "No iré a menos que me inviten.", en: "I won't go unless they invite me."}
+  - {type: 1, level: C1, es: "Puedes usar mi coche siempre que me lo devuelvas mañana.", en: "You can use my car provided that you give it back tomorrow."}
+  - {type: 1, level: C1, es: "Date prisa; si no, llegaremos tarde.", en: "Hurry up, otherwise we'll be late."}
+  - {type: 1, level: C1, es: "Si llegas a ver a Ana, dile que me llame.", en: "Should you see Ana, tell her to call me."}
+
+# A sentence with one typical mistake to fix. tag: the kind of mistake (see ERROR_TAGS in practices.py)
+fix:
+  - {type: 3, level: B1, tag: would_in_if, wrong: "If I would have known, I would have told you.", en: "If I had known, I would have told you."}
+  - {type: 3, level: B1, tag: irregular_participle, wrong: "If I had knew about the meeting, I would have come.", en: "If I had known about the meeting, I would have come."}
+  - {type: 3, level: B1, tag: irregular_participle, wrong: "If she had came earlier, she would have met him.", en: "If she had come earlier, she would have met him."}
+  - {type: 1, level: B1, tag: will_in_if, wrong: "If it will rain tomorrow, we will stay at home.", en: "If it rains tomorrow, we will stay at home."}
+  - {type: 2, level: B1, tag: will_with_past, wrong: "If I had more time, I will learn Japanese.", en: "If I had more time, I would learn Japanese."}
+  - {type: 2, level: B1, tag: would_to, wrong: "If I were rich, I would to buy a big house.", en: "If I were rich, I would buy a big house."}
+  - {type: 2, level: B2, tag: would_in_if, wrong: "If we would leave now, we would arrive on time.", en: "If we left now, we would arrive on time."}
+  - {type: 3, level: B2, tag: wrong_main_tense, wrong: "If you had told me, I would help you.", en: "If you had told me, I would have helped you."}
+  - {type: 4, level: B2, tag: will_with_past, wrong: "If I had studied medicine, I will be a doctor now.", en: "If I had studied medicine, I would be a doctor now."}
+  - {type: 4, level: B2, tag: would_in_if, wrong: "If he wouldn't have lost his keys, he would be at home now.", en: "If he hadn't lost his keys, he would be at home now."}
+  - {type: 3, level: C1, tag: irregular_participle, wrong: "Had I knew it, I would have helped you.", en: "Had I known it, I would have helped you."}
+
+# A situation to rewrite as one conditional sentence
+transform:
+  - {type: 3, level: B1, situation: "I didn't set an alarm, so I woke up late.", en: "If I had set an alarm, I wouldn't have woken up late."}
+  - {type: 2, level: B1, situation: "I don't have a car, so I can't drive to work.", en: "If I had a car, I could drive to work."}
+  - {type: 3, level: B1, situation: "She didn't study, so she failed the exam.", en: "If she had studied, she wouldn't have failed the exam."}
+  - {type: 3, level: B1, situation: "He missed the bus because he left home late.", en: "If he hadn't left home late, he wouldn't have missed the bus."}
+  - {type: 1, level: B1, situation: "Maybe it will be sunny tomorrow. In that case, we'll have a picnic.", en: "If it's sunny tomorrow, we'll have a picnic."}
+  - {type: 2, level: B2, situation: "It's raining, so we can't play football.", en: "If it weren't raining, we could play football."}
+  - {type: 4, level: B2, situation: "I didn't save money last year, so I can't go on holiday now.", en: "If I had saved money last year, I could go on holiday now."}
+  - {type: 4, level: B2, situation: "I didn't learn to swim as a child, so I'm afraid of the sea now.", en: "If I had learned to swim as a child, I wouldn't be afraid of the sea now."}
+  - {type: 3, level: C1, situation: "I didn't know about the problem, so I didn't help.", en: "Had I known about the problem, I would have helped."}
+
+# Shown with the correct version after two failed attempts (fixed text: the model's rules weren't reliable)
+rules:
+  1: "Real o posible: if + presente, will / can / imperativo (o presente, si es algo que siempre ocurre). Nunca will en la parte del if."
+  2: "Hipotético en presente o futuro: if + pasado simple (were para todas las personas, aunque was se acepta), would / could / might + verbo, sin to."
+  3: "Pasado irreal: if + had + participio, would / could / might have + participio. Nunca would en la parte del if; ojo con los participios irregulares (known, come, gone)."
+  4: "Mixto: if + had + participio (pasado que no ocurrió), would + verbo (resultado ahora). También al revés: if + pasado simple, would have + participio."

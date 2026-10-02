@@ -96,7 +96,7 @@ class Session:
                 print(f"  {BOLD}{YELLOW}{note}{RESET}")
             status = self.practice.status()
             tag = f"{CYAN}[{status}]{RESET} " if status else ""
-            cmd = input(f"{tag}{BOLD}🎙  Enter para hablar › {RESET}").strip()
+            cmd = input(f"{tag}{BOLD}{self.practice.input_prompt} › {RESET}").strip()
             if cmd.lower() == "q":
                 break
             if cmd.lower() == "r":
@@ -118,7 +118,7 @@ class Session:
         if len(audio) < 0.3 * SAMPLE_RATE:
             print(f"{DIM}(grabación demasiado corta){RESET}")
             return "", None
-        text = self.stt.transcribe(audio)
+        text = self.stt.transcribe(audio, self.practice.listen_language())
         if not text:
             print(f"{DIM}(no se detectó voz){RESET}")
             return "", None
