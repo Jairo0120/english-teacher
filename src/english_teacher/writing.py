@@ -12,13 +12,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from english_teacher.cloud import is_cloud, make_client
 from english_teacher.levels import Level, render
-from english_teacher.llm import Tutor, load_prompt
+from english_teacher.llm import load_prompt
 
 ROOT = Path(__file__).resolve().parents[2]
-# Not real time, so it can use a slower model: Qwen3 14B explained naturalness changes more accurately
-# than Gemma 3 12B in our tests and kept the author's meaning (see README)
-DEFAULT_WRITING_MODEL = "qwen3:14b"
+# Not real time, so it can use slower models. Qwen3 14B does the grammar step well locally; the
+# naturalness step needs a stronger model, so it goes to OpenAI by default (see README)
+DEFAULT_GRAMMAR_MODEL = "qwen3:14b"
+DEFAULT_NATURAL_MODEL = "openai:gpt-5.4-mini"
 
 DIM, BOLD, RED, GREEN, YELLOW, CYAN, STRIKE, RESET = (
     "\033[2m", "\033[1m", "\033[31m", "\033[32m", "\033[33m", "\033[36m", "\033[9m", "\033[0m"
@@ -89,12 +91,19 @@ def diff(old: str, new: str, markdown: bool = False) -> str:
 
 
 class Reviewer:
-    def __init__(self, tutor: Tutor, level: Level):
-        self.tutor = tutor
+    def __init__(self, grammar_client, natural_client, level: Level, fallback=None):
+        """Clients only need `structured(system, content, schema) -> dict` (local Tutor or OpenAIClient).
+
+        fallback: client for the naturalness step if natural_client fails (e.g. no network).
+        """
+        self.grammar_client = grammar_client
+        self.natural_client = natural_client
         self.level = level
+        self.fallback = fallback
+        self.fallback_reason = ""  # set when the naturalness step switched to the fallback
 
     def grammar(self, paragraph: str) -> Step:
-        d = self.tutor.structured(render(load_prompt("writing_grammar"), self.level), paragraph, GRAMMAR_SCHEMA)
+        d = self.grammar_client.structured(render(load_prompt("writing_grammar"), self.level), paragraph, GRAMMAR_SCHEMA)
         return apply_changes(paragraph, [
             Change(c["original"], c["corrected"], c["why_es"].strip(), "grammar") for c in d.get("changes", [])
         ])
@@ -103,7 +112,7 @@ class Reviewer:
         content = paragraph
         if just_corrected:
             content += "\n\nJust corrected (keep as is): " + "; ".join(just_corrected)
-        d = self.tutor.structured(render(load_prompt("writing_natural"), self.level), content, NATURAL_SCHEMA)
+        d = self._natural_call(render(load_prompt("writing_natural"), self.level), content)
         changes = [
             Change(c["original"], c["natural"], c["why_es"].strip(),
                    "optional" if c.get("kind") == "optional" else "unnatural")
@@ -114,6 +123,17 @@ class Reviewer:
         step = apply_changes(paragraph, kept)
         step.skipped += len(changes) - len(kept)
         return step
+
+
+    def _natural_call(self, system: str, content: str) -> dict:
+        try:
+            return self.natural_client.structured(system, content, NATURAL_SCHEMA)
+        except Exception as e:  # network, auth, quota... the review must still finish
+            if self.fallback is None or self.natural_client is self.fallback:
+                raise
+            self.fallback_reason = f"{type(e).__name__}: {e}"
+            self.natural_client = self.fallback
+            return self.natural_client.structured(system, content, NATURAL_SCHEMA)
 
 
 def read_text(path: Path | None) -> str:
@@ -136,16 +156,33 @@ def show_step(i: int, total: int, step: Step, empty: str) -> None:
         print(f"       {DIM}{c.why}{RESET}")
 
 
-def run(model: str, level: Level, path: Path | None) -> None:
+def natural_client_or_fallback(spec: str, local):
+    """The naturalness client, or the local one (with a warning) if the cloud one can't be created."""
+    if not is_cloud(spec):
+        return make_client(spec), spec
+    try:
+        return make_client(spec), spec
+    except Exception as e:  # typically OPENAI_API_KEY missing
+        print(f"{YELLOW}⚠️  No se pudo usar {spec} ({e}).{RESET}")
+        print(f"{YELLOW}   El paso 2 usará el modelo local. Define OPENAI_API_KEY para usar OpenAI.{RESET}")
+        return local, "local"
+
+
+def run(grammar_model: str, natural_model: str, level: Level, path: Path | None) -> None:
     text = read_text(path)
     paragraphs = split_paragraphs(text)
     if not paragraphs:
         print("(texto vacío)")
         return
-    tutor = Tutor("", model)
-    reviewer = Reviewer(tutor, level)
+    local = make_client(grammar_model)
+    natural, natural_model = natural_client_or_fallback(natural_model, local)
+    if natural_model == "local":
+        natural_model = grammar_model
+    reviewer = Reviewer(local, natural, level, fallback=local)
     words = sum(len(p.split()) for p in paragraphs)
-    print(f"\n{DIM}{len(paragraphs)} párrafos · {words} palabras · {model} · nivel {level.name}{RESET}")
+    print(f"\n{DIM}{len(paragraphs)} párrafos · {words} palabras · nivel {level.name}{RESET}")
+    print(f"{DIM}Gramática: {grammar_model} · Naturalidad: {natural_model}"
+          f"{' (el texto se envía a OpenAI)' if is_cloud(natural_model) else ''}{RESET}")
 
     print(f"\n{BOLD}{CYAN}━━ Paso 1: gramática ━━{RESET}")
     grammar = []
@@ -166,11 +203,15 @@ def run(model: str, level: Level, path: Path | None) -> None:
             if not future.done():
                 print(f"{DIM}(revisando párrafo {i}/{len(futures)}...){RESET}", end="\r", flush=True)
             natural.append(future.result())
+            if reviewer.fallback_reason:
+                print(f"{YELLOW}⚠️  {natural_model} falló ({reviewer.fallback_reason}); "
+                      f"sigo con {grammar_model}.{RESET}")
+                natural_model, reviewer.fallback_reason = grammar_model, ""
             show_step(i, len(futures), natural[-1], "Suena natural")
 
     final = "\n\n".join(s.after for s in natural)
     print(f"\n{BOLD}{CYAN}━━ Texto final ━━{RESET}\n\n{final}\n")
-    report = save_report(paragraphs, grammar, natural, model, level)
+    report = save_report(paragraphs, grammar, natural, f"{grammar_model} + {natural_model}", level)
     print(f"{DIM}Informe guardado en {report.relative_to(ROOT)}{RESET}")
 
 

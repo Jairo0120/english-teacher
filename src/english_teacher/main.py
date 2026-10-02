@@ -319,7 +319,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Tutor de inglés local por voz.")
     parser.add_argument("practice", nargs="?", choices=[*PRACTICES, WRITING], help="tipo de práctica (si no, muestra un menú)")
     parser.add_argument("-m", "--model", help=f"modelo de Ollama (por defecto {DEFAULT_MODEL}; "
-                                              f"{writing.DEFAULT_WRITING_MODEL} en writing)")
+                                              f"en writing, el de gramática: {writing.DEFAULT_GRAMMAR_MODEL})")
+    parser.add_argument("--natural-model", help=f"writing: modelo para la naturalidad (por defecto "
+                                                f"{writing.DEFAULT_NATURAL_MODEL}; se guarda como predeterminado)")
     parser.add_argument("-f", "--file", type=Path, help="writing: archivo con el texto (si no, lo pegas)")
     parser.add_argument("-w", "--stt-model", help="tamaño de Whisper (por defecto small)")
     parser.add_argument("-v", "--voice", help="voz de Kokoro (por defecto af_heart)")
@@ -339,7 +341,10 @@ def main() -> None:
     choice = args.practice or choose_practice()
     if choice == WRITING:
         try:
-            writing.run(args.model or writing.DEFAULT_WRITING_MODEL, level, args.file)
+            if args.natural_model:
+                settings.save({"natural_model": args.natural_model})
+            natural = args.natural_model or settings.load().get("natural_model", writing.DEFAULT_NATURAL_MODEL)
+            writing.run(args.model or writing.DEFAULT_GRAMMAR_MODEL, natural, level, args.file)
         except (KeyboardInterrupt, EOFError):
             print()
         return

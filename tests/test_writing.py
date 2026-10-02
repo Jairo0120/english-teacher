@@ -50,7 +50,7 @@ def test_reviewer_steps_and_protected_corrections():
             {"original": "In general", "natural": "Overall", "kind": "optional", "why_es": "más natural"},
         ]},
     ])
-    reviewer = Reviewer(tutor, LEVELS["B2"])
+    reviewer = Reviewer(tutor, tutor, LEVELS["B2"])
     g = reviewer.grammar("We planned to make a trip since months. In general it was great.")
     assert g.after == "We planned to make a trip for months. In general it was great."
     assert g.changes[0].kind == "grammar"
@@ -79,6 +79,20 @@ def test_naturalness_cannot_undo_grammar_corrections():
         {"original": "take a trip", "natural": "go", "kind": "unnatural", "why_es": "wrong"},
         {"original": "friends of the university", "natural": "university friends", "kind": "unnatural", "why_es": "ok"},
     ]}])
-    step = Reviewer(tutor, LEVELS["B2"]).natural("I decided to take a trip with friends of the university.", ["take a trip"])
+    step = Reviewer(tutor, tutor, LEVELS["B2"]).natural("I decided to take a trip with friends of the university.", ["take a trip"])
     assert step.after == "I decided to take a trip with university friends."
     assert [c.why for c in step.changes] == ["ok"] and step.skipped == 1
+
+
+class FailingClient:
+    def structured(self, system, content, schema):
+        raise ConnectionError("no network")
+
+
+def test_naturalness_falls_back_to_local_model():
+    local = FakeTutor([{"changes": [
+        {"original": "make a trip", "natural": "take a trip", "kind": "unnatural", "why_es": "local"}]}])
+    reviewer = Reviewer(local, FailingClient(), LEVELS["B2"], fallback=local)
+    step = reviewer.natural("We wanted to make a trip.", [])
+    assert step.after == "We wanted to take a trip." and reviewer.natural_client is local
+    assert reviewer.fallback_reason == "ConnectionError: no network"
